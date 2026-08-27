@@ -4,7 +4,8 @@
  */
 
 import React, { useState, useEffect, useRef } from 'react';
-import {   
+import {
+  Menu,
   BookOpen, 
   Layers, 
   FileText, 
@@ -54,7 +55,11 @@ import {
   ExternalLink,
   Maximize2,
   Minimize2,
-  HelpCircle
+  HelpCircle,
+  Bell,
+  Printer,
+  Star,
+  Award
 } from 'lucide-react';
 
 import { 
@@ -71,10 +76,14 @@ import {
   CORE_16_CATEGORIES,
   OFFICIAL_16_COURSE_FILE_STRUCTURE,
   CourseFileSlotConfig,
-  BulkQueueItem
+  BulkQueueItem,
+  AppNotification,
+  CORE_8_CSE_COURSE_CODES,
+  CORE_8_CSE_BENCHMARKS
 } from './types';
 
 import { GoogleLogin } from '@react-oauth/google';
+import SignatureCanvas from 'react-signature-canvas';
 const isFirebaseConfigured = false;
 
 
@@ -130,17 +139,67 @@ const getUserFriendlyErrorMessage = (errorMsg: string) => {
   return errorMsg; 
 };
 
-const HelpTooltip = ({ text }: { text: string }) => (
-  <div className="group relative inline-flex items-center justify-center ml-1.5 cursor-help">
-    <div className="w-3.5 h-3.5 rounded-full bg-slate-200 text-slate-500 flex items-center justify-center text-[9px] font-bold">?</div>
-    <div className="pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity absolute bottom-full left-1/2 -translate-x-1/2 mb-1 w-48 bg-slate-800 text-white text-[10px] p-2 rounded-lg shadow-lg z-50 normal-case font-sans">
-      {text}
-      <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-slate-800"></div>
+const HelpTooltip = ({ text }: { text: string }) => {
+  const [isOpen, setIsOpen] = useState(false);
+  return (
+    <div className="relative inline-flex items-center ml-1.5">
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          setIsOpen(prev => !prev);
+        }}
+        onBlur={() => setIsOpen(false)}
+        aria-label={`Help information: ${text}`}
+        className="w-6 h-6 rounded-full bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-slate-600 flex items-center justify-center text-xs font-bold transition cursor-pointer focus:outline-none focus:ring-2 focus:ring-brand"
+      >
+        ?
+      </button>
+      {isOpen && (
+        <div
+          role="tooltip"
+          className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 w-56 bg-slate-900 text-white text-xs p-2.5 rounded-xl shadow-xl z-50 normal-case font-sans border border-slate-700 pointer-events-auto"
+        >
+          {text}
+          <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-slate-900"></div>
+        </div>
+      )}
     </div>
-  </div>
-);
+  );
+};
 
 export default function App() {
+  // Mobile Menu State
+  const [showMobileMenu, setShowMobileMenu] = useState(false);
+
+  // Global keyboard listener for modal dismissal & accessibility
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setShowSignatureModal(false);
+        setShowBulkUploadModal(false);
+        setShowRoleManualModal(false);
+        setShowCore8HubModal(false);
+        setShowPrintManifestModal(false);
+        setShowAddCourse(false);
+        setShowAddOffering(false);
+        setShowAddUser(false);
+        setShowUploadDoc(false);
+        setShowReviewDoc(null);
+        setPreviewDoc(null);
+        setHistoryModalCategory(null);
+        setHistoryModalOfferingId(null);
+        setShowNotificationDrawer(false);
+        setShowMobileMenu(false);
+        setReminderModalData(null);
+        setShowAddCatModal(false);
+        setConfirmDialog(prev => ({ ...prev, isOpen: false }));
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
   // Authentication State
   const [currentUser, setCurrentUser] = useState<UserType | null>(null);
   const [isLoadingAuth, setIsLoadingAuth] = useState(true);
@@ -210,6 +269,30 @@ export default function App() {
   // Selected detail view
   const [selectedOffering, setSelectedOffering] = useState<(CourseOffering & { course?: Course; instructor?: UserType }) | null>(null);
   const [isExportingId, setIsExportingId] = useState<string | null>(null);
+
+  // Signature Modal State
+  const [showSignatureModal, setShowSignatureModal] = useState(false);
+  const [signatureAction, setSignatureAction] = useState<'submit' | 'approve' | null>(null);
+  const [signatureMode, setSignatureMode] = useState<'draw' | 'upload' | 'type'>('draw');
+  const [uploadedSignatureUrl, setUploadedSignatureUrl] = useState<string | null>(null);
+  const [typedSignatureName, setTypedSignatureName] = useState('');
+  const [typedSignatureFont, setTypedSignatureFont] = useState<number>(0);
+  const sigCanvasRef = useRef<SignatureCanvas | null>(null);
+  const [isPopulatingSamples, setIsPopulatingSamples] = useState(false);
+
+  // Notification Center State
+  const [notificationsList, setNotificationsList] = useState<AppNotification[]>([]);
+  const [unreadNotifCount, setUnreadNotifCount] = useState(0);
+  const [showNotificationDrawer, setShowNotificationDrawer] = useState(false);
+
+  // Selective Batch Download & Print State
+  const [selectedDocIdsForBatch, setSelectedDocIdsForBatch] = useState<Set<string>>(new Set());
+  const [isExportingSelective, setIsExportingSelective] = useState(false);
+  const [showPrintManifestModal, setShowPrintManifestModal] = useState(false);
+
+  // Core 8 CSE Accreditation Benchmark Filter & Hub State
+  const [onlyCore8Filter, setOnlyCore8Filter] = useState(false);
+  const [showCore8HubModal, setShowCore8HubModal] = useState(false);
 
   // Compliance & Faculty Missing Review Filter State
   const [reviewSearch, setReviewSearch] = useState('');
@@ -719,18 +802,34 @@ export default function App() {
     return { isValid: true };
   };
 
-  // Merge server and local simulated documents
+  // Merge server and local simulated documents with guaranteed offering & course bindings
   const getMergedDocuments = () => {
     const merged: any[] = [];
     // Add all server documents
     documents.forEach(serverDoc => {
-      merged.push(serverDoc);
+      const offering = serverDoc.offering || offerings.find(o => o.id === serverDoc.offeringId);
+      const course = serverDoc.course || (offering ? courses.find(c => c.id === offering.courseId) : null);
+      const instructor = serverDoc.instructor || (offering ? usersList.find(u => u.id === offering.instructorId) : null);
+      merged.push({
+        ...serverDoc,
+        offering: offering || serverDoc.offering,
+        course: course || serverDoc.course,
+        instructor: instructor || serverDoc.instructor
+      });
     });
     // Add local simulated documents only if there is no server document for that offering & category
     localDocuments.forEach(simDoc => {
       const exists = documents.some(d => d.offeringId === simDoc.offeringId && d.category === simDoc.category);
       if (!exists) {
-        merged.push(simDoc);
+        const offering = simDoc.offering || offerings.find(o => o.id === simDoc.offeringId);
+        const course = simDoc.course || (offering ? courses.find(c => c.id === offering.courseId) : null);
+        const instructor = simDoc.instructor || (offering ? usersList.find(u => u.id === offering.instructorId) : null);
+        merged.push({
+          ...simDoc,
+          offering,
+          course,
+          instructor
+        });
       }
     });
     return merged;
@@ -787,10 +886,18 @@ export default function App() {
   useEffect(() => {
     if (currentUser) {
       fetchAllData();
-      if (currentUser.role === UserRole.ADMIN || currentUser.role === UserRole.DEPT_HEAD) {
-        setBrowseMode('global');
-      } else {
+      if (currentUser.role === UserRole.INSTRUCTOR) {
+        setActiveTab('desk');
         setBrowseMode('structured');
+      } else if (currentUser.role === UserRole.DEPT_HEAD) {
+        setActiveTab('review');
+        setBrowseMode('global');
+      } else if (currentUser.role === UserRole.AUDITOR) {
+        setActiveTab('review');
+        setBrowseMode('structured');
+      } else {
+        setActiveTab('courses');
+        setBrowseMode('global');
       }
     }
   }, [currentUser]);
@@ -815,14 +922,15 @@ export default function App() {
   const fetchAllData = async () => {
     setIsDataLoading(true);
     try {
-      const [coursesRes, offeringsRes, docsRes, logsRes, usersRes, catRes, trashRes] = await Promise.all([
+      const [coursesRes, offeringsRes, docsRes, logsRes, usersRes, catRes, trashRes, notifRes] = await Promise.all([
         fetch('/api/courses'),
         fetch('/api/offerings'),
         fetch('/api/documents'),
         fetch('/api/audit-log'),
         fetch('/api/users'),
         fetch('/api/categories?all=true'),
-        fetch('/api/trash')
+        fetch('/api/trash'),
+        fetch('/api/notifications')
       ]);
 
       const coursesData = await coursesRes.json();
@@ -832,6 +940,7 @@ export default function App() {
       const usersData = await usersRes.json();
       const catData = await catRes.json();
       const trashData = await trashRes.json();
+      const notifData = await notifRes.json().catch(() => ({}));
 
       setCourses(coursesData.courses || []);
       setOfferings(offeringsData.offerings || []);
@@ -842,12 +951,163 @@ export default function App() {
         setCategoriesList(catData.categories);
       }
       setTrashDocuments(trashData.documents || []);
+      if (notifData.notifications) {
+        setNotificationsList(notifData.notifications);
+        setUnreadNotifCount(notifData.unreadCount || 0);
+      }
     } catch (err) {
       console.error('Error loading application data:', err);
       showNotification('Failed to sync course archives from server', 'error');
     } finally {
       setIsDataLoading(false);
     }
+  };
+
+  // Polling for real-time notifications
+  useEffect(() => {
+    if (!currentUser) return;
+    const interval = setInterval(() => {
+      fetchNotifications();
+    }, 20000);
+    return () => clearInterval(interval);
+  }, [currentUser]);
+
+  const fetchNotifications = async () => {
+    try {
+      const res = await fetch('/api/notifications');
+      if (res.ok) {
+        const data = await res.json();
+        setNotificationsList(data.notifications || []);
+        setUnreadNotifCount(data.unreadCount || 0);
+      }
+    } catch (e) {
+      console.error('Failed to sync notifications', e);
+    }
+  };
+
+  const handleMarkNotificationRead = async (id: string, linkOfferingId?: string) => {
+    try {
+      await fetch(`/api/notifications/${id}/read`, { method: 'PUT' });
+      setNotificationsList(prev => prev.map(n => n.id === id ? { ...n, isRead: true } : n));
+      setUnreadNotifCount(prev => Math.max(0, prev - 1));
+
+      if (linkOfferingId) {
+        const target = offerings.find(o => o.id === linkOfferingId);
+        if (target) {
+          setSelectedOffering(target);
+          setActiveTab('courses');
+        }
+        setShowNotificationDrawer(false);
+      }
+    } catch (e) {
+      console.error('Error marking notification read', e);
+    }
+  };
+
+  const handleMarkAllNotificationsRead = async () => {
+    try {
+      await fetch('/api/notifications/read-all', { method: 'PUT' });
+      setNotificationsList(prev => prev.map(n => ({ ...n, isRead: true })));
+      setUnreadNotifCount(0);
+    } catch (e) {
+      console.error('Error marking all read', e);
+    }
+  };
+
+  const handleDeleteNotification = async (id: string) => {
+    try {
+      await fetch(`/api/notifications/${id}`, { method: 'DELETE' });
+      setNotificationsList(prev => prev.filter(n => n.id !== id));
+      setUnreadNotifCount(prev => {
+        const target = notificationsList.find(n => n.id === id);
+        return target && !target.isRead ? Math.max(0, prev - 1) : prev;
+      });
+    } catch (e) {
+      console.error('Error deleting notification', e);
+    }
+  };
+
+  const handleBatchSelectiveExport = async () => {
+    if (!selectedOffering || selectedDocIdsForBatch.size === 0) return;
+    setIsExportingSelective(true);
+    try {
+      const res = await fetch(`/api/offerings/${selectedOffering.id}/selective-export`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ documentIds: Array.from(selectedDocIdsForBatch) })
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        showNotification(err.error || 'Failed to export custom package', 'error');
+        return;
+      }
+
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${selectedOffering.academicYear}.${selectedOffering.term}.${selectedOffering.course?.code || 'Course'}-${selectedOffering.section}_Selected_${selectedDocIdsForBatch.size}_Files.zip`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+
+      showNotification(`📦 Custom ZIP with ${selectedDocIdsForBatch.size} files downloaded successfully!`, 'success');
+    } catch (e) {
+      showNotification('Network error during export', 'error');
+    } finally {
+      setIsExportingSelective(false);
+    }
+  };
+
+  const generateTypedSignatureDataUrl = (text: string, fontIndex: number): string => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 600;
+    canvas.height = 180;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return '';
+
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    const fonts = [
+      '42px "Great Vibes", "Brush Script MT", cursive',
+      '38px "Dancing Script", "Segoe Script", cursive',
+      '44px "Sacramento", "Lucida Handwriting", cursive',
+      '40px "Caveat", "Comic Sans MS", cursive'
+    ];
+
+    ctx.font = fonts[fontIndex] || fonts[0];
+    ctx.fillStyle = '#0f172a';
+    ctx.textBaseline = 'middle';
+    ctx.textAlign = 'center';
+
+    const displayName = text.trim() || 'Signature';
+    ctx.fillText(displayName, canvas.width / 2, canvas.height / 2 - 12);
+
+    // Ink flourish underline
+    ctx.strokeStyle = '#1e293b';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    const textWidth = ctx.measureText(displayName).width;
+    const startX = Math.max(30, (canvas.width - textWidth) / 2 - 15);
+    const endX = Math.min(canvas.width - 30, (canvas.width + textWidth) / 2 + 20);
+    const y = canvas.height / 2 + 28;
+    
+    ctx.moveTo(startX, y);
+    ctx.quadraticCurveTo(canvas.width / 2, y + 8, endX, y);
+    ctx.stroke();
+
+    return canvas.toDataURL('image/png');
+  };
+
+  const openSignatureModal = (action: 'submit' | 'approve') => {
+    setSignatureAction(action);
+    setSignatureMode('draw');
+    setUploadedSignatureUrl(null);
+    setTypedSignatureName(currentUser?.name || '');
+    setTypedSignatureFont(0);
+    setShowSignatureModal(true);
   };
 
   const showNotification = (message: string, type: 'success' | 'error' | 'info') => {
@@ -1365,7 +1625,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
       return;
     }
     if (!selectedFile && !uploadText) {
-      setUploadFormError('Please provide a file to upload or write document payload simulation content');
+      setUploadFormError('Please select a document file (.pdf, .xlsx, or .docx) to upload.');
       return;
     }
 
@@ -1436,6 +1696,30 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
     } finally {
       setIsUploading(false);
       setUploadProgress(0);
+    }
+  };
+
+  const handlePopulateSamples = async (offeringId: string) => {
+    setIsPopulatingSamples(true);
+    try {
+      const res = await fetch(`/api/offerings/${offeringId}/populate-samples`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      const data = await res.json();
+      if (res.ok) {
+        showNotification(`✨ Successfully loaded ${data.count} official sample files & student sub-slots! Portfolio is now 100% complete.`, 'success');
+        await fetchAllData();
+        if (data.offering) {
+          setSelectedOffering(data.offering);
+        }
+      } else {
+        showNotification(data.error || 'Failed to auto-populate sample files', 'error');
+      }
+    } catch (err) {
+      showNotification('Network error loading sample files', 'error');
+    } finally {
+      setIsPopulatingSamples(false);
     }
   };
 
@@ -1530,23 +1814,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
     }
   };
 
-  const handleExportPackage = async (offering: CourseOffering, offDocs: DocumentType[], presentCount: number) => {
-    const activeCoreCategories = categoriesList.filter(c => c.isCore && c.isActive !== false).map(c => c.id);
-    const coreList = activeCoreCategories.length > 0 ? activeCoreCategories : CORE_16_CATEGORIES;
-    if (presentCount < coreList.length) {
-      const missingCats = coreList.filter(catVal => 
-        !offDocs.some(d => d.category === catVal)
-      );
-      const missingLabels = missingCats.map(catVal => getCategoryLabel(catVal));
-      
-      const confirmMsg = "Are you sure you want to export an incomplete package?\n\nMissing categories:\n- " + missingLabels.join("\n- ");
-
-      
-      if (!window.confirm(confirmMsg)) {
-        return;
-      }
-    }
-    
+  const doExportPackage = async (offering: CourseOffering) => {
     setIsExportingId(offering.id);
     showNotification('Exporting package... This may take a moment.', 'info');
     
@@ -1580,6 +1848,28 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
     } finally {
       setIsExportingId(null);
     }
+  };
+
+  const handleExportPackage = async (offering: CourseOffering, offDocs: DocumentType[], presentCount: number) => {
+    const activeCoreCategories = categoriesList.filter(c => c.isCore && c.isActive !== false).map(c => c.id);
+    const coreList = activeCoreCategories.length > 0 ? activeCoreCategories : CORE_16_CATEGORIES;
+    if (presentCount < coreList.length) {
+      const missingCats = coreList.filter(catVal => 
+        !offDocs.some(d => d.category === catVal)
+      );
+      const missingLabels = missingCats.map(catVal => getCategoryLabel(catVal));
+      
+      requestConfirmation(
+        'Export Incomplete Package?',
+        `This course folder is missing ${missingCats.length} required document(s):\n• ${missingLabels.slice(0, 4).join('\n• ')}${missingLabels.length > 4 ? `\n• ...and ${missingLabels.length - 4} more` : ''}\n\nDo you want to continue with the export?`,
+        'Export Anyway',
+        () => doExportPackage(offering),
+        false
+      );
+      return;
+    }
+    
+    await doExportPackage(offering);
   };
 
   // Category Slots Handlers
@@ -1635,40 +1925,38 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
   };
 
   const handleDeleteCategorySlot = async (cat: CategoryConfig) => {
-    if (!window.confirm(`Are you sure you want to deactivate slot "${cat.label}"?\n\nNote: Any existing files uploaded under this category will remain safe, but this slot will no longer be listed in requirements.`)) {
-      return;
-    }
-    try {
-      const res = await fetch(`/api/categories/${cat.id}`, { method: 'DELETE' });
-      if (res.ok) {
-        showNotification(`Requirement slot "${cat.label}" deactivated`, 'success');
-        fetchAllData();
-      } else {
-        const data = await res.json();
-        showNotification(data.error || 'Failed to delete slot', 'error');
+    requestConfirmation('Deactivate Requirement Slot', `Are you sure you want to deactivate slot "${cat.label}"? Any existing files remain safe, but this slot will no longer be required.`, 'Deactivate Slot', async () => {
+      try {
+        const res = await fetch(`/api/categories/${cat.id}`, { method: 'DELETE' });
+        if (res.ok) {
+          showNotification(`Requirement slot "${cat.label}" deactivated`, 'success');
+          fetchAllData();
+        } else {
+          const data = await res.json();
+          showNotification(data.error || 'Failed to delete slot', 'error');
+        }
+      } catch (err) {
+        showNotification('Network error deleting slot', 'error');
       }
-    } catch (err) {
-      showNotification('Network error deleting slot', 'error');
-    }
+    }, true);
   };
 
   // Trash & R2 Purge Handlers
   const handleMoveDocToTrash = async (docId: string, docName: string) => {
-    if (!window.confirm(`Move "${docName}" to Trash? You can restore it later.`)) {
-      return;
-    }
-    try {
-      const res = await fetch(`/api/documents/${docId}`, { method: 'DELETE' });
-      if (res.ok) {
-        showNotification(`Moved "${docName}" to Trash`, 'success');
-        fetchAllData();
-      } else {
-        const data = await res.json();
-        showNotification(data.error || 'Failed to move document to trash', 'error');
+    requestConfirmation('Move to Deleted Files', `Move "${docName}" to Deleted Files? You can restore it anytime.`, 'Move to Deleted Files', async () => {
+      try {
+        const res = await fetch(`/api/documents/${docId}`, { method: 'DELETE' });
+        if (res.ok) {
+          showNotification(`Moved "${docName}" to Trash`, 'success');
+          fetchAllData();
+        } else {
+          const data = await res.json();
+          showNotification(data.error || 'Failed to move document to trash', 'error');
+        }
+      } catch (err) {
+        showNotification('Network error moving document to trash', 'error');
       }
-    } catch (err) {
-      showNotification('Network error moving document to trash', 'error');
-    }
+    }, true);
   };
 
   const handleRestoreTrashDoc = async (docId: string, docName: string) => {
@@ -1687,42 +1975,56 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
   };
 
   const handlePurgeTrashDoc = async (docId: string, docName: string) => {
-    if (!window.confirm(`WARNING: PERMANENT DELETION!\n\nAre you sure you want to permanently delete "${docName}" from Cloudflare R2 storage?\n\nThis action CANNOT be undone.`)) {
-      return;
-    }
-    try {
-      const res = await fetch(`/api/trash/${docId}`, { method: 'DELETE' });
-      const data = await res.json();
-      if (res.ok) {
-        showNotification(`Permanently purged "${docName}" ${data.r2Deleted ? 'from Cloudflare R2 storage' : ''}`, 'success');
-        fetchAllData();
-      } else {
-        showNotification(data.error || 'Failed to purge document', 'error');
+    requestConfirmation('Permanently Delete File', `Are you sure you want to permanently delete "${docName}" from storage? This action cannot be undone.`, 'Permanently Delete', async () => {
+      try {
+        const res = await fetch(`/api/trash/${docId}`, { method: 'DELETE' });
+        const data = await res.json();
+        if (res.ok) {
+          showNotification(`Permanently purged "${docName}" ${data.r2Deleted ? 'from Cloudflare R2 storage' : ''}`, 'success');
+          fetchAllData();
+        } else {
+          showNotification(data.error || 'Failed to purge document', 'error');
+        }
+      } catch (err) {
+        showNotification('Network error purging document from R2', 'error');
       }
-    } catch (err) {
-      showNotification('Network error purging document from R2', 'error');
-    }
+    }, true);
   };
 
   const generatePredefinedText = () => {
     const templates: Record<string, string> = {
-      course_outline: `COURSE SYLLABUS OUTLINE - CSE407\nTitle: Software Engineering\nCredits: 3.0\nLearning Outcomes:\n1. Model software requirements using UML.\n2. Apply Agile/Scrum process frameworks.\n3. Build modular applications and integrate testing pipelines.\nTopics: Agile SDLC, Requirement Specifications, Design Patterns, CI/CD, Unit Testing.`,
+      course_outline: `COURSE SYLLABUS OUTLINE - CSE412\nTitle: Software Engineering\nCredits: 4.0\nLearning Outcomes:\n1. Model software requirements using UML.\n2. Apply Agile/Scrum process frameworks.\n3. Build modular applications and integrate testing pipelines.\nTopics: Agile SDLC, Requirement Specifications, Design Patterns, CI/CD, Unit Testing.`,
       class_attendance: `CLASS ATTENDANCE RECORD SHEET\nAcademic Year: 2025 | Term: Spring\nSection: 01\nTotal Classes Held: 24\nAverage Attendance: 91.4%\nDetails: Weekly records compiled from lecture logs, signed off by instructor.`,
-      midterm_question: `MIDTERM EXAMINATION PAPER - CONFIDENTIAL\nCourse Code: CSE407 | Course Title: Software Engineering\nDuration: 1.5 Hours | Full Marks: 40\n\nQ1 (15 Marks): Discuss software re-engineering and the architectural drift.\nQ2 (15 Marks): Draft a precise use case and sequence diagram for an e-commerce checkout loop.\nQ3 (10 Marks): State testing criteria for MC/DC (Modified Condition/Decision Coverage).`,
-      final_grades: `FINAL COURSE GRADESHEET PORTAL EXPORT\nCourse: CSE407 Software Engineering Sec 01\nGrade Distribution Summary:\nA: 11 students | A-: 8 students\nB+: 10 students | B: 5 students\nC+: 3 students | F: 1 student (Incomplete attendance)\n\nApproved and locked for registrar submission.`,
+      midterm_question: `MIDTERM EXAMINATION PAPER - CONFIDENTIAL\nCourse Code: CSE412 | Course Title: Software Engineering\nDuration: 1.5 Hours | Full Marks: 40\n\nQ1 (15 Marks): Discuss software re-engineering and the architectural drift.\nQ2 (15 Marks): Draft a precise use case and sequence diagram for an e-commerce checkout loop.\nQ3 (10 Marks): State testing criteria for MC/DC (Modified Condition/Decision Coverage).`,
+      final_grades: `FINAL COURSE GRADESHEET PORTAL EXPORT\nCourse: CSE412 Software Engineering Sec 01\nGrade Distribution Summary:\nA: 11 students | A-: 8 students\nB+: 10 students | B: 5 students\nC+: 3 students | F: 1 student (Incomplete attendance)\n\nApproved and locked for registrar submission.`,
       obe_excel: `OUTCOME BASED EDUCATION (OBE) MATRIX ANALYSIS\nCO-PO Attainment Calculator v2.4\nCO1 (Syllabus Design) -> PO1 (Engineering Knowledge): 84% attainment.\nCO2 (UML Diagrams) -> PO3 (Design/Development of Solutions): 72% attainment.\nCO3 (Team Scrum Project) -> PO9 (Individual & Team Work): 95% attainment.`,
     };
     setUploadText(templates[uploadCategory] || `Simulated course archive text content for category ${uploadCategory.toUpperCase()}.\nCreated: ${new Date().toLocaleString()}\nVerified secure container compilation.`);
   };
 
-  // Unique available years & departments for filter dropdowns
+  // Unique available years from offerings & documents
   const availableYears = Array.from(
-    new Set(allDocs.map(d => d.offering?.academicYear).filter(Boolean))
+    new Set([
+      ...allDocs.map(d => d.offering?.academicYear).filter(Boolean),
+      ...offerings.map(o => o.academicYear).filter(Boolean)
+    ])
   ).sort((a, b) => Number(b) - Number(a));
 
   const availableDepts = Array.from(
     new Set(courses.map(c => c.department).filter(Boolean))
   ).sort();
+
+  // Distinct sorted course codes for filter dropdown
+  const availableCourseOptions = Array.from(
+    new Set(courses.map(c => c.code).filter(Boolean))
+  ).sort().map(code => {
+    const matched = courses.find(c => c.code === code);
+    return {
+      code,
+      id: matched?.id || code,
+      title: matched?.title || ''
+    };
+  });
 
   // Reset all filters in Archive Search Hub
   const clearArchiveFilters = () => {
@@ -1767,39 +2069,63 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
     showNotification(`Exported ${filteredDocs.length} document metadata records to CSV`, 'success');
   };
 
-  // Helper to filter documents
+  // Robust multi-token and multi-criteria document filtering
   const filteredDocs = allDocs.filter(doc => {
     // Role-based visibility enforcement on Document Catalog
     const allowedOfferings = getAccessibleOfferings();
     const isAccessible = allowedOfferings.some(o => o.id === doc.offeringId);
     if (!isAccessible) return false;
 
+    const offering = doc.offering || offerings.find(o => o.id === doc.offeringId);
+    const course = doc.course || (offering ? courses.find(c => c.id === offering.courseId) : null);
+
     const searchLower = archiveSearch.toLowerCase().trim();
-    const courseCode = doc.course?.code?.toLowerCase() || '';
-    const courseTitle = doc.course?.title?.toLowerCase() || '';
-    const fileName = doc.fileName?.toLowerCase() || '';
+    const courseCode = course?.code?.toLowerCase() || '';
+    const courseTitle = course?.title?.toLowerCase() || '';
+    const fileName = (doc.fileName || '').toLowerCase();
     const categoryLabel = getCategoryLabel(doc.category).toLowerCase();
-    const uploaderName = doc.uploadedBy?.toLowerCase() || '';
-    const yearStr = (doc.offering?.academicYear || '').toString();
-    const termStr = (doc.offering?.term || '').toLowerCase();
-    const deptStr = (doc.course?.department || '').toLowerCase();
-    const matchesSearch = !searchLower || (
-      courseCode.includes(searchLower) ||
-      courseTitle.includes(searchLower) ||
-      fileName.includes(searchLower) ||
-      categoryLabel.includes(searchLower) ||
-      uploaderName.includes(searchLower) ||
-      yearStr.includes(searchLower) ||
-      termStr.includes(searchLower) ||
-      deptStr.includes(searchLower)
+    const uploaderName = (doc.uploadedBy || '').toLowerCase();
+    const instructorName = (doc.instructor?.name || '').toLowerCase();
+    const yearStr = (offering?.academicYear || '').toString().toLowerCase();
+    const termStr = (offering?.term || '').toLowerCase();
+    const deptStr = (course?.department || '').toLowerCase();
+
+    // Multi-term token matching (all keywords must be matched)
+    const searchTokens = searchLower.split(/\s+/).filter(Boolean);
+    const matchesSearch = searchTokens.length === 0 || searchTokens.every(token =>
+      courseCode.includes(token) ||
+      courseTitle.includes(token) ||
+      fileName.includes(token) ||
+      categoryLabel.includes(token) ||
+      uploaderName.includes(token) ||
+      instructorName.includes(token) ||
+      yearStr.includes(token) ||
+      termStr.includes(token) ||
+      deptStr.includes(token)
     );
 
-    const matchesCourse = !archiveCourseFilter || doc.course?.id === archiveCourseFilter;
+    // Course filter: match by course code or ID
+    const matchesCourse = !archiveCourseFilter ||
+      (course?.code && course.code.toUpperCase() === archiveCourseFilter.toUpperCase()) ||
+      (course?.id && course.id === archiveCourseFilter) ||
+      (offering?.courseId && offering.courseId === archiveCourseFilter);
+
+    // Category filter
     const matchesCategory = !archiveCategoryFilter || doc.category === archiveCategoryFilter;
-    const matchesStatus = !archiveStatusFilter || doc.status === archiveStatusFilter;
-    const matchesYear = !archiveYearFilter || doc.offering?.academicYear?.toString() === archiveYearFilter;
-    const matchesTerm = !archiveTermFilter || doc.offering?.term === archiveTermFilter;
-    const matchesDept = !archiveDeptFilter || doc.course?.department === archiveDeptFilter;
+
+    // Status filter: normalized handling of pending vs pending_review
+    const docStatusNorm = (doc.status === 'pending_review' || doc.status === 'pending') ? 'pending_review' : doc.status;
+    const filterStatusNorm = (archiveStatusFilter === 'pending_review' || archiveStatusFilter === 'pending') ? 'pending_review' : archiveStatusFilter;
+    const matchesStatus = !archiveStatusFilter || docStatusNorm === filterStatusNorm;
+
+    // Year filter
+    const matchesYear = !archiveYearFilter || (offering?.academicYear && String(offering.academicYear) === archiveYearFilter);
+
+    // Term filter: case-insensitive
+    const matchesTerm = !archiveTermFilter || (offering?.term && offering.term.toLowerCase() === archiveTermFilter.toLowerCase());
+
+    // Department filter: case-insensitive trim
+    const matchesDept = !archiveDeptFilter || (course?.department && course.department.toLowerCase().trim() === archiveDeptFilter.toLowerCase().trim());
 
     return matchesSearch && matchesCourse && matchesCategory && matchesStatus && matchesYear && matchesTerm && matchesDept;
   });
@@ -1822,15 +2148,17 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
 
   const filteredOfferings = accessibleOfferings.filter(off => {
     if (globalCourseCode) {
+      const q = globalCourseCode.toLowerCase().trim();
       const code = off.course?.code?.toLowerCase() || '';
-      if (!code.includes(globalCourseCode.toLowerCase())) {
+      const title = off.course?.title?.toLowerCase() || '';
+      if (!code.includes(q) && !title.includes(q)) {
         return false;
       }
     }
 
     if (globalSession) {
       const [yearStr, termStr] = globalSession.split('-');
-      if (off.academicYear !== Number(yearStr) || off.term !== termStr) {
+      if (off.academicYear !== Number(yearStr) || off.term?.toLowerCase() !== termStr?.toLowerCase()) {
         return false;
       }
     }
@@ -1849,6 +2177,13 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
         if (hasCategoryDoc) return false;
       } else if (globalCategoryStatus === 'present') {
         if (!hasCategoryDoc) return false;
+      }
+    }
+
+    if (onlyCore8Filter) {
+      const code = off.course?.code?.toUpperCase() || '';
+      if (!CORE_8_CSE_COURSE_CODES.includes(code as any)) {
+        return false;
       }
     }
 
@@ -1917,17 +2252,17 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
           <div className="bg-surface border border-subtle rounded-3xl p-8 shadow-xl space-y-6">
             <div className="border-b border-divider pb-5">
               <h3 className="text-lg font-bold text-primary flex items-center gap-2">
-                <Lock className="w-4 h-4 text-brand" /> Authorized Staff Access
+                <Lock className="w-4 h-4 text-brand" /> Staff Sign In
               </h3>
               <p className="text-xs text-tertiary mt-1">
-                A secure relational audit trail records all file submissions and approvals.
+                All uploads, reviews, and endorsements are securely tracked and archived.
               </p>
             </div>
 
             <form onSubmit={handleLogin} className="space-y-4">
               <div>
                 <label htmlFor="email" className="block text-xs font-bold uppercase tracking-wider text-tertiary mb-2">
-                  Academic Email ID
+                  University Email
                 </label>
                 <div className="relative">
                   <span className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-quaternary">
@@ -1955,7 +2290,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                 type="submit"
                 className="w-full flex items-center justify-center gap-2 bg-brand hover:bg-brand-hover text-white font-semibold py-3 px-4 rounded-xl transition shadow-lg shadow-indigo-500/10 cursor-pointer text-sm"
               >
-                <UserCheck className="w-4 h-4" /> Simulated Email Login
+                <UserCheck className="w-4 h-4" /> Sign In
               </button>
               <div className="flex justify-center mt-4">
                 <GoogleLogin
@@ -1970,7 +2305,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
 
             <div className="relative flex py-2 items-center">
               <div className="flex-grow border-t border-divider"></div>
-              <span className="flex-shrink mx-4 text-xs font-mono text-quaternary">OR QUICK SELECT DEMO STAFF ROLE</span>
+              <span className="flex-shrink mx-4 text-xs font-mono text-quaternary">OR QUICK SELECT A DEMO ROLE</span>
               <div className="flex-grow border-t border-divider"></div>
             </div>
 
@@ -1981,7 +2316,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                 className="flex flex-col items-start p-3 bg-background hover:bg-surface-hover border border-subtle hover:border-brand/50 rounded-2xl text-left transition cursor-pointer"
               >
                 <span className="text-xs font-bold text-primary-muted">System Admin</span>
-                <span className="text-[10px] text-tertiary font-mono mt-1">admin@university.edu</span>
+                <span className="text-xs text-tertiary font-mono mt-1">admin@university.edu</span>
               </button>
 
               <button
@@ -1989,7 +2324,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                 className="flex flex-col items-start p-3 bg-background hover:bg-surface-hover border border-subtle hover:border-brand/50 rounded-2xl text-left transition cursor-pointer"
               >
                 <span className="text-xs font-bold text-primary-muted">Department Head</span>
-                <span className="text-[10px] text-tertiary font-mono mt-1">head@university.edu</span>
+                <span className="text-xs text-tertiary font-mono mt-1">head@university.edu</span>
               </button>
 
               <button
@@ -1997,15 +2332,15 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                 className="flex flex-col items-start p-3 bg-background hover:bg-surface-hover border border-subtle hover:border-brand/50 rounded-2xl text-left transition cursor-pointer"
               >
                 <span className="text-xs font-bold text-primary-muted">Dr. Alice Smith</span>
-                <span className="text-[10px] text-tertiary font-mono mt-1">alice@university.edu</span>
+                <span className="text-xs text-tertiary font-mono mt-1">alice@university.edu</span>
               </button>
 
               <button
                 onClick={() => handleQuickLogin('auditor@university.edu')}
                 className="flex flex-col items-start p-3 bg-background hover:bg-surface-hover border border-subtle hover:border-brand/50 rounded-2xl text-left transition cursor-pointer"
               >
-                <span className="text-xs font-bold text-primary-muted">Board Auditor</span>
-                <span className="text-[10px] text-tertiary font-mono mt-1">auditor@university.edu</span>
+                <span className="text-xs font-bold text-primary-muted">Board Auditor / Coordinator</span>
+                <span className="text-xs text-tertiary font-mono mt-1">auditor@university.edu</span>
               </button>
             </div>
           </div>
@@ -2013,7 +2348,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
 
         {/* Footer */}
         <div className="text-center text-xs text-quaternary font-mono">
-          Course File Archive | Powered by Node Express Relational Core | Port 3000
+          Course File Archive • University Portfolio & Accreditation Management
         </div>
       </div>
     );
@@ -2037,29 +2372,157 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
       )}
 
       {/* Header Navbar */}
-      <header className="bg-surface border-b border-subtle px-4 sm:px-6 py-4 flex items-center justify-between sticky top-0 z-40 shadow-sm min-h-[64px] shrink-0">
-        <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-          <div className="w-10 h-10 rounded bg-brand flex items-center justify-center text-white font-bold">
+      <header className="bg-surface border-b border-subtle px-4 sm:px-6 py-3.5 flex items-center justify-between sticky top-0 z-40 shadow-sm min-h-[64px] shrink-0">
+        <div className="flex items-center gap-2 sm:gap-3">
+          {/* Mobile navigation toggle */}
+          <button
+            type="button"
+            onClick={() => setShowMobileMenu(prev => !prev)}
+            aria-label="Toggle navigation menu"
+            aria-expanded={showMobileMenu}
+            className="md:hidden p-2 text-tertiary hover:text-primary rounded-xl min-h-[44px] min-w-[44px] flex items-center justify-center hover:bg-surface-hover transition cursor-pointer"
+          >
+            {showMobileMenu ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+          </button>
+
+          <div className="w-10 h-10 rounded-xl bg-brand flex items-center justify-center text-white font-bold shadow-sm">
             <span className="text-sm">CFA</span>
           </div>
           <div>
             <h1 className="text-lg font-bold leading-tight text-primary">
               Course File Archive
             </h1>
-            <p className="text-[10px] uppercase tracking-wider text-quaternary font-semibold">UNIVERSITY COURSE ARCHIVE MANAGEMENT</p>
+            <p className="text-xs uppercase tracking-wider text-quaternary font-semibold">UNIVERSITY COURSE ARCHIVE MANAGEMENT</p>
           </div>
         </div>
 
         {/* User Info & Actions */}
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-2 sm:gap-4">
 
           <button
+            type="button"
             onClick={toggleTheme}
-            className="p-2 text-tertiary hover:text-primary transition rounded-full hover:bg-surface-hover shrink-0"
+            className="p-2.5 text-tertiary hover:text-primary transition rounded-full hover:bg-surface-hover shrink-0 min-h-[44px] min-w-[44px] flex items-center justify-center cursor-pointer"
+            aria-label="Toggle dark/light theme"
             title="Toggle Theme"
           >
             {theme === 'dark' ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
           </button>
+
+          {/* Notification Bell */}
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setShowNotificationDrawer(prev => !prev)}
+              className="relative p-2.5 text-tertiary hover:text-primary transition rounded-full hover:bg-surface-hover shrink-0 cursor-pointer min-h-[44px] min-w-[44px] flex items-center justify-center"
+              aria-label={`Notifications, ${unreadNotifCount} unread`}
+              title="Notifications"
+            >
+              <Bell className="w-5 h-5" />
+              {unreadNotifCount > 0 && (
+                <span className="absolute top-1.5 right-1.5 w-4 h-4 bg-rose-500 text-white rounded-full text-xs font-bold flex items-center justify-center animate-pulse">
+                  {unreadNotifCount > 9 ? '9+' : unreadNotifCount}
+                </span>
+              )}
+            </button>
+
+            {/* Notification Flyout Drawer */}
+            {showNotificationDrawer && (
+              <div
+                role="dialog"
+                aria-modal="true"
+                aria-label="Notification Center"
+                className="absolute right-0 mt-3 w-[calc(100vw-2rem)] sm:w-96 max-w-sm bg-surface text-primary border border-subtle shadow-2xl rounded-2xl p-4 z-50 animate-slide-in"
+              >
+                <div className="flex items-center justify-between pb-3 border-b border-subtle">
+                  <div className="flex items-center gap-2">
+                    <Bell className="w-4 h-4 text-brand" />
+                    <h3 className="font-bold text-sm text-primary">Notifications</h3>
+                    {unreadNotifCount > 0 && (
+                      <span className="bg-rose-500/10 text-rose-500 text-xs font-bold font-mono px-2 py-0.5 rounded-full border border-rose-500/20">
+                        {unreadNotifCount} new
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {notificationsList.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={handleMarkAllNotificationsRead}
+                        className="text-xs font-semibold text-brand hover:underline cursor-pointer"
+                      >
+                        Mark all as read
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => setShowNotificationDrawer(false)}
+                      className="p-1 text-quaternary hover:text-primary rounded-lg cursor-pointer"
+                      aria-label="Close notification drawer"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+
+                <div className="mt-3 max-h-80 overflow-y-auto space-y-2 pr-1">
+                  {notificationsList.length === 0 ? (
+                    <div className="py-8 text-center text-tertiary">
+                      <Bell className="w-8 h-8 mx-auto opacity-30 mb-2" />
+                      <p className="text-xs">No notifications right now.</p>
+                    </div>
+                  ) : (
+                    notificationsList.map(n => (
+                      <div
+                        key={n.id}
+                        onClick={() => handleMarkNotificationRead(n.id, n.linkOfferingId)}
+                        className={`p-3 rounded-xl border transition flex items-start gap-3 cursor-pointer group ${
+                          !n.isRead 
+                            ? 'bg-brand/5 border-brand/20 shadow-xs' 
+                            : 'bg-background hover:bg-surface-hover border-subtle opacity-75'
+                        }`}
+                      >
+                        <div className="mt-0.5 shrink-0">
+                          {n.type === 'success' && <CheckCircle className="w-4 h-4 text-emerald-500" />}
+                          {n.type === 'warning' && <AlertCircle className="w-4 h-4 text-amber-500" />}
+                          {n.type === 'action_required' && <Zap className="w-4 h-4 text-rose-500 animate-bounce" />}
+                          {n.type === 'info' && <Info className="w-4 h-4 text-indigo-500" />}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center justify-between gap-1">
+                            <h4 className={`text-xs font-bold truncate ${!n.isRead ? 'text-primary' : 'text-secondary'}`}>
+                              {n.title}
+                            </h4>
+                            <span className="text-xs text-quaternary font-mono shrink-0">
+                              {new Date(n.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            </span>
+                          </div>
+                          <p className="text-xs text-tertiary line-clamp-2 mt-0.5">
+                            {n.message}
+                          </p>
+                          {n.linkOfferingId && (
+                            <span className="text-xs text-brand font-bold mt-1 inline-flex items-center gap-1 group-hover:underline">
+                              View Course File &rarr;
+                            </span>
+                          )}
+                        </div>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDeleteNotification(n.id);
+                          }}
+                          className="opacity-0 group-hover:opacity-100 text-quaternary hover:text-rose-500 p-1 transition cursor-pointer"
+                          title="Dismiss notification"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
 
           <button
             type="button"
@@ -2078,10 +2541,10 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
           >
             <div className="text-right">
               <p className="text-xs font-bold text-primary">{currentUser.name}</p>
-              <p className="text-[10px] text-tertiary font-semibold">
+              <p className="text-xs text-tertiary font-semibold">
                 {currentUser.role === UserRole.ADMIN ? 'System Administrator' :
                  currentUser.role === UserRole.DEPT_HEAD ? 'Lead Reviewer (Dept Head)' :
-                 currentUser.role === UserRole.AUDITOR ? 'Board Auditor' :
+                 currentUser.role === UserRole.AUDITOR ? 'Board Auditor / Coordinator' :
                  'Lead Instructor (Faculty)'}
               </p>
             </div>
@@ -2105,11 +2568,38 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
       </header>
 
       <div className="flex-grow flex flex-col md:flex-row">
+        {/* Mobile Backdrop */}
+        {showMobileMenu && (
+          <div
+            className="fixed inset-0 bg-black/60 backdrop-blur-xs z-40 md:hidden"
+            onClick={() => setShowMobileMenu(false)}
+            aria-hidden="true"
+          />
+        )}
+
         {/* Navigation Sidebar */}
-        <aside className="w-full md:w-64 bg-inverse-surface-dark text-quaternary-light border-b md:border-b-0 md:border-r border-border-subtle p-4 shrink-0 flex flex-col justify-between">
+        <aside
+          aria-label="Sidebar Navigation"
+          className={`${
+            showMobileMenu
+              ? 'fixed inset-y-0 left-0 z-50 w-72 max-w-[85vw] shadow-2xl flex'
+              : 'hidden md:flex'
+          } w-full md:w-64 bg-slate-900 text-slate-300 border-b md:border-b-0 md:border-r border-slate-800 p-4 shrink-0 flex-col justify-between transition-all duration-200`}
+        >
           <div className="space-y-6">
-            <div className="space-y-1">
-              <p className="text-[10px] font-bold text-tertiary uppercase tracking-widest px-3 mb-3">Active Offerings</p>
+            <div className="flex items-center justify-between md:hidden pb-3 border-b border-slate-700/50">
+              <span className="text-xs font-bold text-white uppercase tracking-wider">Navigation Menu</span>
+              <button
+                type="button"
+                onClick={() => setShowMobileMenu(false)}
+                className="p-1.5 text-quaternary hover:text-white rounded-lg cursor-pointer"
+                aria-label="Close navigation menu"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <nav aria-label="Main Navigation" className="space-y-1">
+              <p className="text-xs font-bold text-tertiary uppercase tracking-widest px-3 mb-3">Active Offerings</p>
               
               <button
                 onClick={() => {
@@ -2125,7 +2615,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                 <span className="flex items-center gap-2.5">
                   <BookOpen className="w-4 h-4" /> Course Directory
                 </span>
-                <span className="bg-white/10 text-quaternary-light px-1.5 py-0.5 rounded text-[9px] font-mono">{courses.length}</span>
+                <span className="bg-white/10 text-quaternary-light px-1.5 py-0.5 rounded text-xs font-mono">{courses.length}</span>
               </button>
 
               {(currentUser.role === UserRole.INSTRUCTOR || currentUser.role === UserRole.ADMIN || currentUser.role === UserRole.DEPT_HEAD || offerings.some(o => o.instructorId === currentUser.id)) && (
@@ -2136,9 +2626,9 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                   }`}
                 >
                   <span className="flex items-center gap-2.5">
-                    <Layers className="w-4 h-4" /> Instructor Workbench
+                    <Layers className="w-4 h-4" /> My Assigned Courses
                   </span>
-                  <span className="bg-success/20 text-success-bold px-1.5 py-0.5 rounded text-[9px] font-mono">
+                  <span className="bg-success/20 text-success-bold px-1.5 py-0.5 rounded text-xs font-mono">
                     {offerings.filter(o => o.instructorId === currentUser.id).length}
                   </span>
                 </button>
@@ -2158,11 +2648,11 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                     const accOfferings = getAccessibleOfferings();
                     const pendingRemindersCount = accOfferings.filter(o => getOfferingMissingCategories(o.id).length > 0).length;
                     return pendingRemindersCount > 0 ? (
-                      <span className="bg-rose-500/25 text-rose-300 font-bold px-1.5 py-0.5 rounded text-[9px] font-mono border border-rose-500/30">
+                      <span className="bg-rose-500/25 text-rose-300 font-bold px-1.5 py-0.5 rounded text-xs font-mono border border-rose-500/30">
                         {pendingRemindersCount} pending
                       </span>
                     ) : (
-                      <span className="bg-emerald-500/20 text-emerald-300 px-1.5 py-0.5 rounded text-[9px] font-mono">
+                      <span className="bg-emerald-500/20 text-emerald-300 px-1.5 py-0.5 rounded text-xs font-mono">
                         100% OK
                       </span>
                     );
@@ -2179,7 +2669,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                 <span className="flex items-center gap-2.5">
                   <FileText className="w-4 h-4" /> Document Catalog
                 </span>
-                <span className="bg-white/10 text-quaternary-light px-1.5 py-0.5 rounded text-[9px] font-mono">{documents.length}</span>
+                <span className="bg-white/10 text-quaternary-light px-1.5 py-0.5 rounded text-xs font-mono">{documents.length}</span>
               </button>
 
               <button
@@ -2189,9 +2679,9 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                 }`}
               >
                 <span className="flex items-center gap-2.5">
-                  <Activity className="w-4 h-4" /> System Audit Log
+                  <Activity className="w-4 h-4" /> Activity Log
                 </span>
-                <span className="bg-white/10 text-quaternary-light px-1.5 py-0.5 rounded text-[9px] font-mono">{auditLogs.length}</span>
+                <span className="bg-white/10 text-quaternary-light px-1.5 py-0.5 rounded text-xs font-mono">{auditLogs.length}</span>
               </button>
 
               {currentUser.role === UserRole.ADMIN && (
@@ -2204,7 +2694,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                   <span className="flex items-center gap-2.5">
                     <User className="w-4 h-4" /> User Directory
                   </span>
-                  <span className="bg-white/10 text-quaternary-light px-1.5 py-0.5 rounded text-[9px] font-mono">{usersList.length}</span>
+                  <span className="bg-white/10 text-quaternary-light px-1.5 py-0.5 rounded text-xs font-mono">{usersList.length}</span>
                 </button>
               )}
 
@@ -2216,9 +2706,9 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                   }`}
                 >
                   <span className="flex items-center gap-2.5">
-                    <SlidersHorizontal className="w-4 h-4" /> Requirement Slots
+                    <SlidersHorizontal className="w-4 h-4" /> Document Categories
                   </span>
-                  <span className="bg-white/10 text-quaternary-light px-1.5 py-0.5 rounded text-[9px] font-mono">
+                  <span className="bg-white/10 text-quaternary-light px-1.5 py-0.5 rounded text-xs font-mono">
                     {categoriesList.filter(c => c.isActive !== false).length}
                   </span>
                 </button>
@@ -2232,41 +2722,43 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                   }`}
                 >
                   <span className="flex items-center gap-2.5">
-                    <Trash2 className="w-4 h-4" /> Trash & R2 Storage
+                    <Trash2 className="w-4 h-4" /> Deleted Files
                   </span>
                   {trashDocuments.length > 0 ? (
-                    <span className="bg-rose-500/20 text-rose-300 border border-rose-500/30 px-1.5 py-0.5 rounded text-[9px] font-mono">
+                    <span className="bg-rose-500/20 text-rose-300 border border-rose-500/30 px-1.5 py-0.5 rounded text-xs font-mono">
                       {trashDocuments.length}
                     </span>
                   ) : (
-                    <span className="bg-white/10 text-quaternary-light px-1.5 py-0.5 rounded text-[9px] font-mono">0</span>
+                    <span className="bg-white/10 text-quaternary-light px-1.5 py-0.5 rounded text-xs font-mono">0</span>
                   )}
                 </button>
               )}
 
               <button
                 type="button"
-                onClick={() => openRoleManual(currentUser.role)}
+                onClick={() => {
+                  setShowMobileMenu(false);
+                  openRoleManual(currentUser.role);
+                }}
                 className="w-full flex items-center justify-between px-3 py-2.5 min-h-[44px] rounded-lg text-xs font-semibold text-quaternary hover:text-white hover:bg-white/5 transition cursor-pointer"
                 title="View Role Operating Manual & SOP Guide"
               >
                 <span className="flex items-center gap-2.5">
-                  <HelpCircle className="w-4 h-4 text-indigo-400" /> Role Operating Manual
+                  <HelpCircle className="w-4 h-4 text-indigo-400" /> Role Guide & SOP
                 </span>
-                <span className="bg-indigo-500/20 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-mono">SOP</span>
+                <span className="bg-indigo-500/20 text-indigo-300 px-1.5 py-0.5 rounded text-xs font-mono">SOP</span>
               </button>
-            </div>
+            </nav>
           </div>
 
-          {/* Quick Stats sidebar footer */}
-          <div className="mt-auto p-4 bg-inverse-surface rounded-xl border border-slate-700/50 space-y-2">
-            <div className="flex items-center gap-2 mb-1">
+          {/* System Status sidebar footer */}
+          <div className="mt-auto p-3.5 bg-inverse-surface rounded-xl border border-slate-700/50 space-y-1.5">
+            <div className="flex items-center gap-2">
               <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></div>
-              <span className="text-[10px] font-bold text-white uppercase tracking-wider">Cloud SQL Connected</span>
+              <span className="text-xs font-bold text-white uppercase tracking-wider">System Online</span>
             </div>
-            <p className="text-[9px] text-quaternary leading-normal">
-              PostgreSQL Instance: cfa-prod-db-01<br />
-              Latency: 14ms • High Availability
+            <p className="text-xs text-quaternary leading-normal">
+              Course File Archive Service • All systems operational
             </p>
           </div>
         </aside>
@@ -2284,11 +2776,11 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                 <p className="text-xs text-amber-50">
                   Your academic staff account has been successfully created, but is currently awaiting System Administrator approval before full system activation.
                 </p>
-                <p className="text-[10px] text-amber-100/85 font-mono">
+                <p className="text-xs text-amber-100/85 font-mono">
                   Default Role Assigned: {currentUser.role.toUpperCase()} • Department: {currentUser.department || 'PENDING ASSIGNMENT'}
                 </p>
               </div>
-              <span className="bg-white/10 text-white text-[10px] font-mono font-bold tracking-wider px-3 py-1 rounded-full shrink-0 uppercase border border-white/10">
+              <span className="bg-white/10 text-white text-xs font-mono font-bold tracking-wider px-3 py-1 rounded-full shrink-0 uppercase border border-white/10">
                 Awaiting Verification
               </span>
             </div>
@@ -2339,6 +2831,66 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                       </button>
                     </div>
                   )}
+                </div>
+              )}
+
+              {/* Compact Core 8 Benchmark Quick Filter Bar */}
+              {selectedOffering === null && (
+                <div className="flex flex-wrap items-center justify-between gap-2 bg-surface border border-subtle rounded-xl px-3.5 py-2 text-xs shadow-xs">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setOnlyCore8Filter(prev => !prev)}
+                      className={`px-2.5 py-1 rounded-lg text-xs font-bold font-mono flex items-center gap-1.5 transition cursor-pointer border ${
+                        onlyCore8Filter
+                          ? 'bg-amber-500 text-white border-amber-600 shadow-xs'
+                          : 'bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 dark:text-amber-300 border-amber-500/20'
+                      }`}
+                    >
+                      <Star className={`w-3.5 h-3.5 ${onlyCore8Filter ? 'fill-white' : 'text-amber-500 fill-amber-500'}`} />
+                      <span>{onlyCore8Filter ? 'Core 8 Active' : 'Filter Core 8'}</span>
+                    </button>
+
+                    <div className="h-4 w-px bg-subtle hidden sm:block"></div>
+
+                    <div className="flex flex-wrap items-center gap-1">
+                      {CORE_8_CSE_BENCHMARKS.map((item) => {
+                        const isSelected = globalCourseCode.toUpperCase() === item.code;
+                        return (
+                          <button
+                            key={item.code}
+                            type="button"
+                            onClick={() => {
+                              if (isSelected) {
+                                setGlobalCourseCode('');
+                              } else {
+                                setGlobalCourseCode(item.code);
+                                setBrowseMode('global');
+                              }
+                            }}
+                            className={`px-2 py-0.5 rounded text-xs font-mono font-bold transition border cursor-pointer ${
+                              isSelected
+                                ? 'bg-brand text-white border-brand'
+                                : 'bg-background hover:bg-surface-hover text-secondary border-subtle'
+                            }`}
+                            title={`${item.code}: ${item.title}`}
+                          >
+                            {item.code}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setShowCore8HubModal(true)}
+                    className="text-tertiary hover:text-primary text-xs font-semibold flex items-center gap-1 cursor-pointer ml-auto"
+                    title="View Core 8 Syllabus Matrix & Program Outcomes"
+                  >
+                    <Info className="w-3.5 h-3.5 text-brand" />
+                    <span>Matrix</span>
+                  </button>
                 </div>
               )}
 
@@ -2397,7 +2949,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                               setGlobalCategory('');
                               setGlobalCategoryStatus('all');
                             }}
-                            className="text-[10px] font-bold text-brand hover:text-brand-bolder transition cursor-pointer font-mono min-h-[44px] flex items-center px-2"
+                            className="text-xs font-bold text-brand hover:text-brand-bolder transition cursor-pointer font-mono min-h-[44px] flex items-center px-2"
                           >
                             CLEAR ALL
                           </button>
@@ -2414,7 +2966,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                     <div className={`md:grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 ${showMobileFilters ? 'block space-y-4 md:space-y-0' : 'hidden'}`}>
                       {/* Course Code Filter */}
                       <div className="space-y-1.5">
-                        <label className="block text-[10px] font-bold text-tertiary uppercase tracking-wider">
+                        <label className="block text-xs font-bold text-tertiary uppercase tracking-wider">
                           Course Code
                         </label>
                         <div className="relative">
@@ -2431,7 +2983,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
 
                       {/* Academic Session Filter */}
                       <div className="space-y-1.5">
-                        <label className="block text-[10px] font-bold text-tertiary uppercase tracking-wider">
+                        <label className="block text-xs font-bold text-tertiary uppercase tracking-wider">
                           Academic Session
                         </label>
                         <select
@@ -2450,7 +3002,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
 
                       {/* Instructor Filter */}
                       <div className="space-y-1.5">
-                        <label className="block text-[10px] font-bold text-tertiary uppercase tracking-wider">
+                        <label className="block text-xs font-bold text-tertiary uppercase tracking-wider">
                           Instructor
                         </label>
                         <select
@@ -2469,7 +3021,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
 
                       {/* Document Category Filter */}
                       <div className="space-y-1.5">
-                        <label className="block text-[10px] font-bold text-tertiary uppercase tracking-wider">
+                        <label className="block text-xs font-bold text-tertiary uppercase tracking-wider">
                           Course Document Category
                         </label>
                         <select
@@ -2493,7 +3045,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
 
                       {/* Document Category Status Filter */}
                       <div className="space-y-1.5">
-                        <label className="block text-[10px] font-bold text-tertiary uppercase tracking-wider">
+                        <label className="block text-xs font-bold text-tertiary uppercase tracking-wider">
                           Category Status
                         </label>
                         <select
@@ -2559,15 +3111,20 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                             >
                               <div>
                                 <div className="flex items-center justify-between mb-3">
-                                  <div className="flex items-center gap-1.5">
+                                  <div className="flex items-center gap-1.5 flex-wrap">
                                     <span className="font-mono text-xs font-bold bg-brand-subtle text-brand-bold border border-brand-divider px-2.5 py-1 rounded-lg">
                                       {off.course?.code || 'CSE'}
                                     </span>
-                                    <span className="text-[10px] font-bold bg-surface-hover text-secondary-muted px-2 py-1 rounded-lg uppercase">
+                                    <span className="text-xs font-bold bg-surface-hover text-secondary-muted px-2 py-1 rounded-lg uppercase">
                                       {off.term} {off.academicYear}
                                     </span>
+                                    {off.course?.code && CORE_8_CSE_COURSE_CODES.includes(off.course.code.toUpperCase() as any) && (
+                                      <span className="bg-amber-500/10 text-amber-600 dark:text-amber-300 border border-amber-500/20 text-xs font-bold font-mono px-2 py-0.5 rounded-full flex items-center gap-1" title="8 Core Benchmark Subject">
+                                        ★ Core 8
+                                      </span>
+                                    )}
                                   </div>
-                                  <span className="text-[10px] font-semibold text-tertiary uppercase tracking-wide bg-surface-hover px-2 py-0.5 rounded">
+                                  <span className="text-xs font-semibold text-tertiary uppercase tracking-wide bg-surface-hover px-2 py-0.5 rounded">
                                     Sec {off.section}
                                   </span>
                                 </div>
@@ -2575,13 +3132,13 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                                 <h4 className="text-sm font-bold text-primary group-hover:text-brand transition truncate">
                                   {off.course?.title || 'Course Details'}
                                 </h4>
-                                <p className="text-[11px] text-tertiary mt-1 truncate">
+                                <p className="text-xs text-tertiary mt-1 truncate">
                                   Instructor: <span className="font-semibold text-secondary">{off.instructor?.name || 'Unassigned'}</span>
                                 </p>
 
                                 {globalCategory && (
                                   <div className="mt-3 p-2 bg-background border border-divider rounded-xl flex items-center justify-between text-xs font-semibold">
-                                    <span className="text-tertiary font-medium text-[10px] truncate max-w-[130px]" title={getCategoryLabel(globalCategory)}>
+                                    <span className="text-tertiary font-medium text-xs truncate max-w-[130px]" title={getCategoryLabel(globalCategory)}>
                                       {getCategoryLabel(globalCategory)}
                                     </span>
                                     {(() => {
@@ -2594,7 +3151,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                                               e.stopPropagation();
                                               setShowReviewDoc(catDoc);
                                             }}
-                                            className="inline-flex items-center gap-1 text-success-muted font-bold bg-success-subtle hover:bg-success-subtle/80 border border-success-subtle px-2 py-0.5 rounded text-[9px] uppercase font-mono cursor-pointer transition"
+                                            className="inline-flex items-center gap-1 text-success-muted font-bold bg-success-subtle hover:bg-success-subtle/80 border border-success-subtle px-2 py-0.5 rounded text-xs uppercase font-mono cursor-pointer transition"
                                             title="Click to view file details"
                                           >
                                             <CheckCircle className="w-3 h-3 text-emerald-500" /> Uploaded (View)
@@ -2610,7 +3167,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                                               setUploadCategory(globalCategory as DocumentCategory);
                                               setShowUploadDoc(true);
                                             }}
-                                            className="inline-flex items-center gap-1 text-error-muted font-bold bg-error-subtle hover:bg-error-subtle/80 border border-error-subtle px-2 py-0.5 rounded text-[9px] uppercase font-mono cursor-pointer transition"
+                                            className="inline-flex items-center gap-1 text-error-muted font-bold bg-error-subtle hover:bg-error-subtle/80 border border-error-subtle px-2 py-0.5 rounded text-xs uppercase font-mono cursor-pointer transition"
                                             title="Click to upload missing file"
                                           >
                                             <AlertCircle className="w-3 h-3 text-rose-400" /> Missing (Upload)
@@ -2633,7 +3190,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                                     style={{ width: `${Math.max(4, percentComplete)}%` }}
                                   ></div>
                                 </div>
-                                <div className="flex justify-between items-center text-[10px] text-tertiary font-mono mt-1">
+                                <div className="flex justify-between items-center text-xs text-tertiary font-mono mt-1">
                                   <span>{percentComplete}% Uploaded</span>
                                   <span className="flex items-center gap-0.5 group-hover:text-brand transition font-sans font-semibold">
                                     Open Portfolio <ChevronRight className="w-3 h-3" />
@@ -2667,10 +3224,10 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                                 className="group bg-surface border border-subtle hover:border-brand/40 rounded-2xl p-6 hover:shadow-lg transition duration-200 cursor-pointer flex flex-col justify-between h-40"
                               >
                                 <div className="flex items-center justify-between">
-                                  <span className="font-mono text-[10px] font-bold bg-brand-subtle text-brand-bold border border-brand-divider px-2.5 py-1 rounded-lg">
+                                  <span className="font-mono text-xs font-bold bg-brand-subtle text-brand-bold border border-brand-divider px-2.5 py-1 rounded-lg">
                                     ACADEMIC SESSION
                                   </span>
-                                  <span className="text-[10px] font-semibold text-tertiary uppercase bg-surface-hover px-2 py-0.5 rounded">
+                                  <span className="text-xs font-semibold text-tertiary uppercase bg-surface-hover px-2 py-0.5 rounded">
                                     {totalOfferings} {totalOfferings === 1 ? 'Offering' : 'Offerings'}
                                   </span>
                                 </div>
@@ -2724,10 +3281,10 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                                 className="group bg-surface border border-subtle hover:border-brand/40 rounded-2xl p-6 hover:shadow-lg transition duration-200 cursor-pointer flex flex-col justify-between h-40"
                               >
                                 <div className="flex items-center justify-between">
-                                  <span className="font-mono text-[10px] font-bold bg-brand-subtle text-brand-bold border border-brand-divider px-2.5 py-1 rounded-lg">
+                                  <span className="font-mono text-xs font-bold bg-brand-subtle text-brand-bold border border-brand-divider px-2.5 py-1 rounded-lg">
                                     SEMESTER
                                   </span>
-                                  <span className="text-[10px] font-semibold text-tertiary uppercase bg-surface-hover px-2 py-0.5 rounded">
+                                  <span className="text-xs font-semibold text-tertiary uppercase bg-surface-hover px-2 py-0.5 rounded">
                                     {totalOfferings} {totalOfferings === 1 ? 'Offering' : 'Offerings'}
                                   </span>
                                 </div>
@@ -2769,7 +3326,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                         </h3>
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                           {accessibleOfferings
-                            .filter(o => o.academicYear === selectedYear && o.term === selectedTerm)
+                            .filter(o => o.academicYear === selectedYear && o.term?.toLowerCase() === selectedTerm?.toLowerCase() && (!onlyCore8Filter || CORE_8_CSE_COURSE_CODES.includes(o.course?.code?.toUpperCase() as any)))
                             .map(off => {
                               const offDocs = allDocs.filter(d => d.offeringId === off.id && d.isCurrent);
                               const activeCore = categoriesList.filter(c => c.isCore && c.isActive !== false).map(c => c.id);
@@ -2787,10 +3344,17 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                                 >
                                   <div>
                                     <div className="flex items-center justify-between mb-3">
-                                      <span className="font-mono text-xs font-bold bg-brand-subtle text-brand-bold border border-brand-divider px-2.5 py-1 rounded-lg">
-                                        {off.course?.code || 'CSE'}
-                                      </span>
-                                      <span className="text-[10px] font-semibold text-tertiary uppercase tracking-wide bg-surface-hover px-2 py-0.5 rounded">
+                                      <div className="flex items-center gap-1.5 flex-wrap">
+                                        <span className="font-mono text-xs font-bold bg-brand-subtle text-brand-bold border border-brand-divider px-2.5 py-1 rounded-lg">
+                                          {off.course?.code || 'CSE'}
+                                        </span>
+                                        {off.course?.code && CORE_8_CSE_COURSE_CODES.includes(off.course.code.toUpperCase() as any) && (
+                                          <span className="bg-amber-500/10 text-amber-600 dark:text-amber-300 border border-amber-500/20 text-xs font-bold font-mono px-2 py-0.5 rounded-full flex items-center gap-1" title="8 Core Benchmark Subject">
+                                            ★ Core 8
+                                          </span>
+                                        )}
+                                      </div>
+                                      <span className="text-xs font-semibold text-tertiary uppercase tracking-wide bg-surface-hover px-2 py-0.5 rounded">
                                         Section {off.section}
                                       </span>
                                     </div>
@@ -2798,7 +3362,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                                     <h4 className="text-sm font-bold text-primary group-hover:text-brand transition truncate">
                                       {off.course?.title || 'Course Details'}
                                     </h4>
-                                    <p className="text-[11px] text-tertiary mt-1 truncate">
+                                    <p className="text-xs text-tertiary mt-1 truncate">
                                       Instructor: <span className="font-semibold text-secondary">{off.instructor?.name || 'Unassigned'}</span>
                                     </p>
                                   </div>
@@ -2817,7 +3381,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                                       ></div>
                                     </div>
                                     
-                                    <div className="flex justify-between items-center text-[10px] text-tertiary font-mono mt-1">
+                                    <div className="flex justify-between items-center text-xs text-tertiary font-mono mt-1">
                                       <span>{percentComplete}% Uploaded</span>
                                       <span className="flex items-center gap-0.5 group-hover:text-brand transition font-sans font-semibold">
                                         Open Portfolio <ChevronRight className="w-3 h-3" />
@@ -2836,7 +3400,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                                               if (fileInput) fileInput.click();
                                             }, 50);
                                           }}
-                                          className="flex-1 bg-surface-hover hover:bg-brand-subtle text-brand hover:text-brand-bold text-[10px] font-bold py-1.5 rounded flex items-center justify-center gap-1 transition"
+                                          className="flex-1 bg-surface-hover hover:bg-brand-subtle text-brand hover:text-brand-bold text-xs font-bold py-1.5 rounded flex items-center justify-center gap-1 transition"
                                         >
                                           <Plus className="w-3 h-3" /> Quick Upload
                                         </button>
@@ -2847,7 +3411,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                                             e.stopPropagation(); 
                                             handleExportPackage(off, offDocs, presentCount); 
                                           }}
-                                          className="flex-1 bg-surface-hover hover:bg-brand-subtle text-brand hover:text-brand-bold text-[10px] font-bold py-1.5 rounded flex items-center justify-center gap-1 transition"
+                                          className="flex-1 bg-surface-hover hover:bg-brand-subtle text-brand hover:text-brand-bold text-xs font-bold py-1.5 rounded flex items-center justify-center gap-1 transition"
                                         >
                                           <FileUp className="w-3 h-3" /> Export
                                         </button>
@@ -2898,7 +3462,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
 
                     return (
                       <div className="space-y-6">
-                        <div className="bg-inverse-surface-dark text-white rounded-2xl p-6 border border-border-subtle shadow-xl space-y-6">
+                        <div className="bg-slate-900 text-white rounded-2xl p-6 border border-slate-800 shadow-xl space-y-6">
                           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                             <div>
                               <div className="flex items-center gap-2">
@@ -2907,7 +3471,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                                 </span>
                                 <h3 className="text-lg font-bold">{selectedOffering.course?.title}</h3>
                               </div>
-                              <p className="text-xs text-quaternary-light mt-2">
+                              <p className="text-xs text-slate-300 mt-2">
                                 Academic Session: <span className="font-semibold text-white">{selectedOffering.term} {selectedOffering.academicYear}</span> • Section: <span className="font-semibold text-white">{selectedOffering.section}</span> • Department: <span className="font-semibold text-slate-200">{selectedOffering.course?.department}</span>
                               </p>
                             </div>
@@ -2916,7 +3480,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                               <div className="flex items-center gap-2.5 bg-white/5 border border-white/10 px-3.5 py-1.5 rounded-xl">
                                 <User className="w-4 h-4 text-indigo-400" />
                                 <div className="text-left">
-                                  <p className="text-[9px] text-brand-muted font-bold tracking-wider uppercase">INSTRUCTOR</p>
+                                  <p className="text-xs text-brand-muted font-bold tracking-wider uppercase">INSTRUCTOR</p>
                                   <p className="text-xs font-semibold text-white">{selectedOffering.instructor?.name || 'Unassigned'}</p>
                                 </div>
                               </div>
@@ -2924,7 +3488,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                               <div className="flex items-center gap-2.5 bg-white/5 border border-white/10 px-3.5 py-1.5 rounded-xl">
                                 <Eye className="w-4 h-4 text-amber-400" />
                                 <div className="text-left">
-                                  <p className="text-[9px] text-amber-300 font-bold tracking-wider uppercase">BOARD AUDITOR</p>
+                                  <p className="text-xs text-amber-300 font-bold tracking-wider uppercase">BOARD AUDITOR / COORDINATOR</p>
                                   {currentUser.role === UserRole.ADMIN ? (
                                     <select
                                       value={selectedOffering.auditorId || ''}
@@ -2938,7 +3502,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                                           });
                                           const data = await res.json();
                                           if (res.ok) {
-                                            showNotification('Assigned board auditor successfully', 'success');
+                                            showNotification('Assigned board auditor/coordinator successfully', 'success');
                                             fetchAllData();
                                             setSelectedOffering({ ...selectedOffering, auditorId: audId || undefined });
                                           } else {
@@ -2948,9 +3512,9 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                                           showNotification('Network error assigning auditor', 'error');
                                         }
                                       }}
-                                      className="bg-inverse-surface border border-slate-700 text-white rounded px-2 py-0.5 text-[11px] focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer mt-0.5"
+                                      className="bg-inverse-surface border border-slate-700 text-white rounded px-2 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer mt-0.5"
                                     >
-                                      <option value="">-- Assign Auditor --</option>
+                                      <option value="">-- Assign Auditor / Coordinator --</option>
                                       {usersList
                                         .filter(u => u.role === UserRole.AUDITOR)
                                         .map(u => (
@@ -2966,6 +3530,27 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                               </div>
 
                               <div className="flex items-center gap-2">
+                                {currentUser && (currentUser.id === selectedOffering.instructorId || currentUser.role === UserRole.ADMIN || currentUser.role === UserRole.DEPT_HEAD) && (
+                                  <button
+                                    onClick={() => handlePopulateSamples(selectedOffering.id)}
+                                    disabled={isPopulatingSamples}
+                                    className="bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 hover:from-indigo-500 hover:to-pink-500 text-white border border-purple-300/40 rounded-xl px-3.5 py-2 text-xs font-bold flex items-center gap-1.5 shadow-md shadow-purple-950/40 transition hover:scale-[1.02] cursor-pointer disabled:opacity-50"
+                                    title="Instantly generate and upload sample files for all 16 checklist slots and student scripts for rapid demo"
+                                  >
+                                    {isPopulatingSamples ? (
+                                      <>
+                                        <Clock className="w-4 h-4 animate-spin text-purple-200" />
+                                        <span>Populating 16 Files...</span>
+                                      </>
+                                    ) : (
+                                      <>
+                                        <Sparkles className="w-4 h-4 text-amber-300" />
+                                        <span>⚡ Load 16 Sample Files</span>
+                                      </>
+                                    )}
+                                  </button>
+                                )}
+
                                 {currentUser && (currentUser.role === UserRole.INSTRUCTOR || currentUser.role === UserRole.ADMIN) && (
                                   <button
                                     onClick={() => {
@@ -2987,32 +3572,141 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                                     {isExportingId === selectedOffering.id ? <Clock className="w-4 h-4 animate-spin" /> : <FileUp className="w-4 h-4" />} {isExportingId === selectedOffering.id ? 'Exporting...' : 'Export Package'}
                                   </button>
                                 )}
+
+                                {/* Signature Action Buttons */}
+                                {selectedOffering.submissionStatus !== 'approved' && currentUser && (currentUser.id === selectedOffering.instructorId || currentUser.role === UserRole.ADMIN) && (
+                                  <button
+                                    onClick={() => openSignatureModal('submit')}
+                                    disabled={presentCount < 16}
+                                    title={presentCount < 16 ? "All 16 core items must be present to submit." : ""}
+                                    className="bg-indigo-600 hover:bg-indigo-500 text-white border border-indigo-700 rounded-xl px-4 py-2 text-xs font-semibold flex items-center gap-2 shadow-sm transition disabled:opacity-50 cursor-pointer"
+                                  >
+                                    <Shield className="w-4 h-4" /> {selectedOffering.submissionStatus === 'submitted' ? 'Update Submission Signature' : 'Sign & Submit Portfolio'}
+                                  </button>
+                                )}
+
+                                {selectedOffering.submissionStatus === 'submitted' && currentUser && (currentUser.role === UserRole.DEPT_HEAD || currentUser.role === UserRole.ADMIN) && (
+                                  <div className="flex gap-2">
+                                    <button
+                                      onClick={() => {
+                                        requestConfirmation(
+                                          'Request Portfolio Revisions',
+                                          'Are you sure you want to send this course portfolio back to the instructor for revisions?',
+                                          'Request Revisions',
+                                          async () => {
+                                            try {
+                                              const res = await fetch(`/api/offerings/${selectedOffering.id}/reject`, { method: 'PUT' });
+                                              if (res.ok) {
+                                                showNotification('Portfolio rejected successfully', 'success');
+                                                fetchAllData();
+                                                const updated = await res.json();
+                                                setSelectedOffering(updated.offering);
+                                              }
+                                            } catch (e) {
+                                              showNotification('Failed to reject portfolio', 'error');
+                                            }
+                                          },
+                                          true
+                                        );
+                                      }}
+                                      className="bg-red-600/20 text-red-500 hover:bg-red-600/30 border border-red-500/30 rounded-xl px-4 py-2 text-xs font-semibold flex items-center gap-2 shadow-sm transition cursor-pointer"
+                                    >
+                                      <XCircle className="w-4 h-4" /> Reject
+                                    </button>
+                                    <button
+                                      onClick={() => openSignatureModal('approve')}
+                                      className="bg-emerald-600 hover:bg-emerald-500 text-white border border-emerald-700 rounded-xl px-4 py-2 text-xs font-semibold flex items-center gap-2 shadow-sm transition cursor-pointer"
+                                    >
+                                      <CheckCircle className="w-4 h-4" /> Endorse & Sign
+                                    </button>
+                                  </div>
+                                )}
                               </div>
                             </div>
                           </div>
+                          
+                          {/* Signature Status Banner */}
+                          {selectedOffering.submissionStatus === 'submitted' && (
+                            <div className="bg-amber-500/10 border border-amber-500/30 rounded-2xl p-4 flex items-start gap-4">
+                              <Shield className="w-8 h-8 text-amber-500 shrink-0" />
+                              <div className="flex-1">
+                                <h4 className="text-amber-500 font-bold text-sm">Portfolio Submitted for Review</h4>
+                                <p className="text-xs text-amber-200 mt-1">This course portfolio has been digitally signed and submitted by the instructor on <span className="font-semibold">{new Date(selectedOffering.submittedAt || '').toLocaleString()}</span>. It is locked for editing pending Department Head approval.</p>
+                              </div>
+                              {selectedOffering.submitterSignatureUrl && (
+                                <div className="shrink-0 bg-white rounded p-1">
+                                  <img src={selectedOffering.submitterSignatureUrl} alt="Instructor Signature" className="h-10 object-contain" />
+                                </div>
+                              )}
+                            </div>
+                          )}
 
-                          <div className="bg-brand/15 border border-brand/20 rounded-2xl p-5 flex flex-col md:flex-row items-center justify-between gap-4">
+                          {selectedOffering.submissionStatus === 'approved' && (
+                            <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-2xl p-4 flex items-start gap-4">
+                              <CheckCircle className="w-8 h-8 text-emerald-500 shrink-0" />
+                              <div className="flex-1">
+                                <h4 className="text-emerald-500 font-bold text-sm">Portfolio Officially Endorsed & Sealed</h4>
+                                <p className="text-xs text-emerald-200 mt-1">This course portfolio was formally endorsed by the Department Head on <span className="font-semibold">{new Date(selectedOffering.approvedAt || '').toLocaleString()}</span>. It is permanently archived.</p>
+                              </div>
+                              <div className="flex gap-2 shrink-0">
+                                {selectedOffering.submitterSignatureUrl && (
+                                  <div className="bg-white rounded p-1 flex flex-col items-center border border-slate-300">
+                                    <span className="text-xs text-slate-500 font-bold uppercase tracking-wider mb-0.5">Instructor</span>
+                                    <img src={selectedOffering.submitterSignatureUrl} alt="Instructor Signature" className="h-8 object-contain" />
+                                  </div>
+                                )}
+                                {selectedOffering.approverSignatureUrl && (
+                                  <div className="bg-white rounded p-1 flex flex-col items-center border border-slate-300">
+                                    <span className="text-xs text-slate-500 font-bold uppercase tracking-wider mb-0.5">Dept Head</span>
+                                    <img src={selectedOffering.approverSignatureUrl} alt="Approver Signature" className="h-8 object-contain" />
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          )}
+                          
+                          {selectedOffering.submissionStatus === 'rejected' && (
+                            <div className="bg-red-500/10 border border-red-500/30 rounded-2xl p-4 flex items-center gap-3">
+                              <XCircle className="w-6 h-6 text-red-500 shrink-0" />
+                              <div>
+                                <h4 className="text-red-500 font-bold text-sm">Portfolio Revisions Requested</h4>
+                                <p className="text-xs text-red-200 mt-0.5">The Department Head has requested revisions for this course file.</p>
+                              </div>
+                            </div>
+                          )}
+
+                          <div className="bg-indigo-950/50 border border-indigo-500/30 rounded-2xl p-5 flex flex-col md:flex-row items-center justify-between gap-4">
                             <div className="space-y-1">
-                              <span className="text-[10px] uppercase tracking-wider font-bold text-brand-muted font-mono">
-                                Course Folder Completeness
+                              <span className="text-xs uppercase tracking-wider font-bold text-indigo-300 font-mono">
+                                Portfolio Completeness
                               </span>
                               <h3 className="text-2xl font-bold text-white font-mono flex items-center gap-2">
                                 {presentCount} / 16 items present
                               </h3>
-                              <p className="text-xs text-brand-muted">
+                              <p className="text-xs text-indigo-200">
                                 {presentCount === 16 
                                   ? '🎉 Beautiful! All 16 course folder elements are present and compiled!' 
                                   : 'Ensure all 16 core course folder categories are populated for approval.'}
                               </p>
+                              {presentCount < 16 && currentUser && (currentUser.id === selectedOffering.instructorId || currentUser.role === UserRole.ADMIN || currentUser.role === UserRole.DEPT_HEAD) && (
+                                <button
+                                  onClick={() => handlePopulateSamples(selectedOffering.id)}
+                                  disabled={isPopulatingSamples}
+                                  className="mt-2 inline-flex items-center gap-1.5 bg-amber-400/20 hover:bg-amber-400/30 text-amber-200 border border-amber-400/40 rounded-xl px-3 py-1.5 text-xs font-bold transition shadow-sm cursor-pointer disabled:opacity-50"
+                                >
+                                  {isPopulatingSamples ? <Clock className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5 text-amber-300" />}
+                                  {isPopulatingSamples ? 'Loading All 16 Files...' : '⚡ Quick Demo: Populate All 16 Files & Sub-slots'}
+                                </button>
+                              )}
                             </div>
                             <div className="w-full md:w-64 space-y-2 shrink-0">
-                              <div className="flex justify-between items-center text-xs font-mono text-brand-muted font-semibold">
+                              <div className="flex justify-between items-center text-xs font-mono text-indigo-300 font-semibold">
                                 <span>Completion Progress</span>
                                 <span>{percentComplete}%</span>
                               </div>
-                              <div className="w-full bg-inverse-surface h-2.5 rounded-full overflow-hidden">
+                              <div className="w-full bg-slate-800 h-2.5 rounded-full overflow-hidden">
                                 <div 
-                                  className="bg-brand-subtle h-full transition-all duration-300 rounded-full"
+                                  className="bg-indigo-500 h-full transition-all duration-300 rounded-full"
                                   style={{ width: `${percentComplete}%` }}
                                 ></div>
                               </div>
@@ -3029,6 +3723,33 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                           accept=".pdf,application/pdf,.xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,.docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
                         />
 
+                        {/* Empty State First-Time Guidance */}
+                        {presentCount === 0 && (
+                          <div className="bg-brand/5 border border-brand/20 rounded-2xl p-5 text-center space-y-3">
+                            <div className="w-12 h-12 rounded-2xl bg-brand/10 text-brand flex items-center justify-center mx-auto">
+                              <FileUp className="w-6 h-6" />
+                            </div>
+                            <div className="max-w-md mx-auto space-y-1">
+                              <h4 className="text-sm font-bold text-primary">Get Started with Your Course Folder</h4>
+                              <p className="text-xs text-secondary-muted leading-relaxed">
+                                No documents have been uploaded yet. Start by uploading your <strong>Course Outline / Syllabus</strong> or recent assessment questions using the requirement slots below.
+                              </p>
+                            </div>
+                            {currentUser && (currentUser.id === selectedOffering.instructorId || currentUser.role === UserRole.ADMIN) && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setUploadCategory('course_outline');
+                                  setShowUploadDoc(true);
+                                }}
+                                className="inline-flex items-center gap-2 px-4 py-2.5 bg-brand hover:bg-brand-hover text-white text-xs font-bold rounded-xl shadow-sm cursor-pointer transition min-h-[44px]"
+                              >
+                                <Plus className="w-4 h-4" /> Upload Course Outline
+                              </button>
+                            )}
+                          </div>
+                        )}
+
                         {/* Checklist Section */}
                         <div className="bg-surface border border-subtle rounded-2xl p-6 shadow-sm space-y-4">
                           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-subtle">
@@ -3036,7 +3757,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                               <h4 className="text-xs font-bold uppercase tracking-wider text-quaternary flex items-center gap-1.5 font-mono">
                                 <Layers className="w-4 h-4 text-brand" /> Course Portfolio Core Requirements (16 slots)
                               </h4>
-                              <p className="text-[11px] text-tertiary mt-0.5">
+                              <p className="text-xs text-tertiary mt-0.5">
                                 Verify each required slot has an approved item. Use filters below to locate specific requirements.
                               </p>
                             </div>
@@ -3080,7 +3801,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                                     setPortfolioCategorySearch('');
                                     setPortfolioStatusFilter('all');
                                   }}
-                                  className="text-[11px] text-rose-500 hover:text-rose-600 font-bold underline cursor-pointer px-1"
+                                  className="text-xs text-rose-500 hover:text-rose-600 font-bold underline cursor-pointer px-1"
                                 >
                                   Reset
                                 </button>
@@ -3088,7 +3809,87 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                             </div>
                           </div>
 
-                                 <div className="space-y-4">
+                          {/* Selective Batch Selection Toolbar */}
+                          <div className="bg-background/80 border border-subtle rounded-xl p-3 flex flex-wrap items-center justify-between gap-2.5">
+                            <div className="flex items-center gap-2">
+                              <Download className="w-4 h-4 text-brand" />
+                              <span className="text-xs font-bold text-primary">Quick Batch Selection:</span>
+                            </div>
+                            
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const availableDocs = allDocs.filter(d => d.offeringId === selectedOffering.id && d.isCurrent && !d.isDeleted);
+                                  setSelectedDocIdsForBatch(new Set(availableDocs.map(d => d.id)));
+                                }}
+                                className="px-2.5 py-1 text-xs font-semibold bg-surface hover:bg-surface-hover border border-subtle rounded-lg text-primary transition cursor-pointer"
+                              >
+                                ☑️ Select All Available
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const questionDocs = allDocs.filter(d => 
+                                    d.offeringId === selectedOffering.id && d.isCurrent && !d.isDeleted &&
+                                    (d.category.includes('question') || d.category === 'projects_list' || d.category === 'lab_experiments_list')
+                                  );
+                                  setSelectedDocIdsForBatch(new Set(questionDocs.map(d => d.id)));
+                                }}
+                                className="px-2.5 py-1 text-xs font-semibold bg-surface hover:bg-surface-hover border border-subtle rounded-lg text-primary transition cursor-pointer"
+                              >
+                                📝 Exam Questions Only
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const sampleDocs = allDocs.filter(d => 
+                                    d.offeringId === selectedOffering.id && d.isCurrent && !d.isDeleted && d.category.includes('sample')
+                                  );
+                                  setSelectedDocIdsForBatch(new Set(sampleDocs.map(d => d.id)));
+                                }}
+                                className="px-2.5 py-1 text-xs font-semibold bg-surface hover:bg-surface-hover border border-subtle rounded-lg text-primary transition cursor-pointer"
+                              >
+                                📄 Student Answer Scripts
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const obeDocs = allDocs.filter(d => 
+                                    d.offeringId === selectedOffering.id && d.isCurrent && !d.isDeleted &&
+                                    ['obe_excel', 'co_attainment', 'po_attainment', 'grade_summary_cqi', 'instructor_feedback'].includes(d.category)
+                                  );
+                                  setSelectedDocIdsForBatch(new Set(obeDocs.map(d => d.id)));
+                                }}
+                                className="px-2.5 py-1 text-xs font-semibold bg-surface hover:bg-surface-hover border border-subtle rounded-lg text-primary transition cursor-pointer"
+                              >
+                                📊 OBE & CQI Reports
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const attDocs = allDocs.filter(d => 
+                                    d.offeringId === selectedOffering.id && d.isCurrent && !d.isDeleted && d.category.includes('attendance')
+                                  );
+                                  setSelectedDocIdsForBatch(new Set(attDocs.map(d => d.id)));
+                                }}
+                                className="px-2.5 py-1 text-xs font-semibold bg-surface hover:bg-surface-hover border border-subtle rounded-lg text-primary transition cursor-pointer"
+                              >
+                                🗓️ Attendance Sheets
+                              </button>
+                              {selectedDocIdsForBatch.size > 0 && (
+                                <button
+                                  type="button"
+                                  onClick={() => setSelectedDocIdsForBatch(new Set())}
+                                  className="px-2.5 py-1 text-xs font-bold text-rose-500 hover:text-rose-600 underline cursor-pointer"
+                                >
+                                  Clear ({selectedDocIdsForBatch.size})
+                                </button>
+                              )}
+                            </div>
+                          </div>
+
+                          <div className="space-y-4">
                             {OFFICIAL_16_COURSE_FILE_STRUCTURE.filter(slot => {
                               // Check search filter against slot label, id, and all sub-slots
                               if (portfolioCategorySearch) {
@@ -3151,8 +3952,25 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                                   <div className="p-4 sm:p-5">
                                     <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
                                       
-                                      {/* Left: Number Badge + Details */}
+                                      {/* Left: Checkbox + Number Badge + Details */}
                                       <div className="flex items-start gap-3.5 min-w-0 flex-grow">
+                                        {mainDoc && (
+                                          <input
+                                            type="checkbox"
+                                            checked={selectedDocIdsForBatch.has(mainDoc.id)}
+                                            onChange={(e) => {
+                                              e.stopPropagation();
+                                              setSelectedDocIdsForBatch(prev => {
+                                                const next = new Set(prev);
+                                                if (e.target.checked) next.add(mainDoc.id);
+                                                else next.delete(mainDoc.id);
+                                                return next;
+                                              });
+                                            }}
+                                            className="w-4 h-4 rounded border-slate-400 text-brand focus:ring-brand cursor-pointer shrink-0 mt-2.5"
+                                            title="Select for batch download or print"
+                                          />
+                                        )}
                                         <div 
                                           className={`w-9 h-9 rounded-xl font-mono font-bold flex items-center justify-center text-xs shrink-0 shadow-xs ${
                                             hasSubSlots ? 'cursor-pointer select-none hover:scale-105 transition-transform' : ''
@@ -3178,35 +3996,35 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                                                 {slot.label}
                                               </h4>
                                               {slot.isCore ? (
-                                                <span className="bg-brand/10 text-brand px-1.5 py-0.5 rounded text-[9px] uppercase font-bold font-mono">Core</span>
+                                                <span className="bg-brand/10 text-brand px-1.5 py-0.5 rounded text-xs uppercase font-bold font-mono">Core</span>
                                               ) : (
-                                                <span className="bg-surface-hover text-quaternary px-1.5 py-0.5 rounded text-[9px] uppercase font-bold font-mono">Optional</span>
+                                                <span className="bg-surface-hover text-quaternary px-1.5 py-0.5 rounded text-xs uppercase font-bold font-mono">Optional</span>
                                               )}
                                               {hasSubSlots && (
-                                                <span className="bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 px-2 py-0.5 rounded text-[9px] uppercase font-bold font-mono border border-indigo-500/20">
+                                                <span className="bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 px-2 py-0.5 rounded text-xs uppercase font-bold font-mono border border-indigo-500/20">
                                                   Question Paper / Spec
                                                 </span>
                                               )}
                                               {hasSubSlots && (
-                                                <span className="inline-flex items-center gap-1 text-[10px] font-mono font-bold bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 px-2 py-0.5 rounded-full border border-indigo-500/20">
+                                                <span className="inline-flex items-center gap-1 text-xs font-mono font-bold bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 px-2 py-0.5 rounded-full border border-indigo-500/20">
                                                   <FolderTree className="w-3 h-3" /> {uploadedSubCount}/{slot.subSlots!.length} Samples Uploaded
                                                 </span>
                                               )}
                                             </div>
 
                                             {slot.filenameExample && (
-                                              <p className="text-[11px] font-mono text-tertiary">
+                                              <p className="text-xs font-mono text-tertiary">
                                                 Filename Example: <span className="font-bold text-rose-600 dark:text-rose-400">{slot.filenameExample}</span>
                                               </p>
                                             )}
 
-                                            <div className="flex flex-wrap items-center gap-2 text-[10px] text-tertiary font-mono pt-0.5">
-                                              <span className="bg-border-subtle/75 text-secondary-muted px-1.5 py-0.5 rounded text-[8px] uppercase font-bold">
+                                            <div className="flex flex-wrap items-center gap-2 text-xs text-tertiary font-mono pt-0.5">
+                                              <span className="bg-border-subtle/75 text-secondary-muted px-1.5 py-0.5 rounded text-xs uppercase font-bold">
                                                 {slot.group}
                                               </span>
                                               {mainDoc ? (
                                                 <>
-                                                  <span className="text-success-muted font-bold bg-success-subtle px-1.5 py-0.5 rounded text-[8px] uppercase">Uploaded</span>
+                                                  <span className="text-success-muted font-bold bg-success-subtle px-1.5 py-0.5 rounded text-xs uppercase">Uploaded</span>
                                                   <span className="text-quaternary">• v{mainDoc.version}</span>
                                                   <span className="text-quaternary truncate max-w-[200px] font-semibold" title={mainDoc.fileName}>
                                                     • {mainDoc.fileName}
@@ -3232,23 +4050,23 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                                                 </>
                                               ) : (
                                                 <>
-                                                  <span className="text-error-muted font-bold bg-error-subtle px-1.5 py-0.5 rounded text-[8px] uppercase">Missing</span>
+                                                  <span className="text-error-muted font-bold bg-error-subtle px-1.5 py-0.5 rounded text-xs uppercase">Missing</span>
                                                   <span className="text-quaternary">• Empty slot {hasSubSlots ? '(Question Paper)' : ''}</span>
                                                 </>
                                               )}
                                             </div>
 
                                             {mainDoc && mainDoc.feedback && (
-                                              <div className="text-[11px] text-error-muted bg-error-subtle border border-error-divider rounded-xl p-2.5 mt-2 font-sans flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                                              <div className="text-xs text-error-muted bg-error-subtle border border-error-divider rounded-xl p-2.5 mt-2 font-sans flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                                                 <div className="min-w-0 flex-1">
-                                                  <strong className="font-bold uppercase tracking-wider text-[10px] block font-mono text-rose-600 dark:text-rose-400">Reviewer Change Request:</strong>
+                                                  <strong className="font-bold uppercase tracking-wider text-xs block font-mono text-rose-600 dark:text-rose-400">Reviewer Change Request:</strong>
                                                   <span className="italic font-medium">"{mainDoc.feedback}"</span>
                                                 </div>
                                                 {(currentUser.role === UserRole.ADMIN || currentUser.role === UserRole.DEPT_HEAD) && (
                                                   <button
                                                     type="button"
                                                     onClick={() => openDocRevisionEmail(mainDoc)}
-                                                    className="inline-flex items-center gap-1 text-[10px] font-bold uppercase font-mono px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white rounded-lg transition shrink-0 cursor-pointer shadow-xs"
+                                                    className="inline-flex items-center gap-1 text-xs font-bold uppercase font-mono px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white rounded-lg transition shrink-0 cursor-pointer shadow-xs"
                                                     title="Send or preview revision email to instructor"
                                                   >
                                                     <Mail className="w-3 h-3" /> Email Faculty
@@ -3264,19 +4082,19 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                                           {mainDoc ? (
                                             <div className="flex items-center gap-2">
                                               <div className="text-right">
-                                                <span className="block text-[9px] font-bold text-quaternary uppercase tracking-widest font-mono">STATUS</span>
+                                                <span className="block text-xs font-bold text-quaternary uppercase tracking-widest font-mono">STATUS</span>
                                                 {mainDoc.status === 'approved' && (
-                                                  <span className="inline-flex items-center gap-1 text-[10px] font-bold text-success-bold font-mono">
+                                                  <span className="inline-flex items-center gap-1 text-xs font-bold text-success-bold font-mono">
                                                     <CheckCircle className="w-3.5 h-3.5 text-success" /> APPROVED
                                                   </span>
                                                 )}
                                                 {mainDoc.status === 'rejected' && (
-                                                  <span className="inline-flex items-center gap-1 text-[10px] font-bold text-error-bold font-mono">
+                                                  <span className="inline-flex items-center gap-1 text-xs font-bold text-error-bold font-mono">
                                                     <XCircle className="w-3.5 h-3.5 text-error" /> REJECTED
                                                   </span>
                                                 )}
                                                 {mainDoc.status === 'pending_review' && (
-                                                  <span className="inline-flex items-center gap-1 text-[10px] font-bold text-warning-bold font-mono">
+                                                  <span className="inline-flex items-center gap-1 text-xs font-bold text-warning-bold font-mono">
                                                     <Clock className="w-3.5 h-3.5 text-warning animate-pulse" /> PENDING
                                                   </span>
                                                 )}
@@ -3325,7 +4143,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                                             </div>
                                           ) : (
                                             <div className="flex items-center gap-2">
-                                              <span className="text-[10px] font-bold text-quaternary font-mono uppercase bg-surface-hover px-2 py-1 rounded">
+                                              <span className="text-xs font-bold text-quaternary font-mono uppercase bg-surface-hover px-2 py-1 rounded">
                                                 MISSING
                                               </span>
                                               {(currentUser.id === selectedOffering.instructorId || currentUser.role === UserRole.ADMIN) && (
@@ -3368,10 +4186,10 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                                   {hasSubSlots && isExpanded && (
                                     <div className="border-t border-subtle bg-slate-50/50 dark:bg-slate-900/30 p-4 sm:p-5 space-y-3 animate-fade-in">
                                       <div className="flex items-center justify-between">
-                                        <span className="text-[11px] font-bold uppercase tracking-wider font-mono text-brand flex items-center gap-1.5">
+                                        <span className="text-xs font-bold uppercase tracking-wider font-mono text-brand flex items-center gap-1.5">
                                           <FolderTree className="w-3.5 h-3.5" /> 2) Representative Samples of Answer Scripts / Reports ({uploadedSubCount}/3 Uploaded):
                                         </span>
-                                        <span className="text-[10px] text-quaternary font-mono">
+                                        <span className="text-xs text-quaternary font-mono">
                                           Click upload on each sub-category
                                         </span>
                                       </div>
@@ -3395,19 +4213,36 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                                             >
                                               <div className="min-w-0 flex-1 space-y-0.5">
                                                 <div className="flex items-center gap-2">
-                                                  <span className="w-6 h-6 rounded-lg bg-brand/10 text-brand font-mono font-bold flex items-center justify-center text-[10px] shrink-0 border border-brand/20">
+                                                  {subDoc && (
+                                                    <input
+                                                      type="checkbox"
+                                                      checked={selectedDocIdsForBatch.has(subDoc.id)}
+                                                      onChange={(e) => {
+                                                        e.stopPropagation();
+                                                        setSelectedDocIdsForBatch(prev => {
+                                                          const next = new Set(prev);
+                                                          if (e.target.checked) next.add(subDoc.id);
+                                                          else next.delete(subDoc.id);
+                                                          return next;
+                                                        });
+                                                      }}
+                                                      className="w-3.5 h-3.5 rounded border-slate-400 text-brand focus:ring-brand cursor-pointer shrink-0"
+                                                      title="Select for batch download or print"
+                                                    />
+                                                  )}
+                                                  <span className="w-6 h-6 rounded-lg bg-brand/10 text-brand font-mono font-bold flex items-center justify-center text-xs shrink-0 border border-brand/20">
                                                     {sub.subNumber})
                                                   </span>
                                                   <p className="text-xs font-bold text-primary truncate" title={sub.label}>
                                                     {sub.label}
                                                   </p>
-                                                  <span className="bg-brand/10 text-brand px-1 py-0.2 rounded text-[8px] uppercase font-bold font-mono">Core</span>
+                                                  <span className="bg-brand/10 text-brand px-1 py-0.2 rounded text-xs uppercase font-bold font-mono">Core</span>
                                                 </div>
 
-                                                <div className="flex flex-wrap items-center gap-2 text-[10px] text-tertiary font-mono pt-0.5 pl-8">
+                                                <div className="flex flex-wrap items-center gap-2 text-xs text-tertiary font-mono pt-0.5 pl-8">
                                                   {subDoc ? (
                                                     <>
-                                                      <span className="text-success-muted font-bold bg-success-subtle px-1 py-0.2 rounded text-[8px] uppercase">Uploaded</span>
+                                                      <span className="text-success-muted font-bold bg-success-subtle px-1 py-0.2 rounded text-xs uppercase">Uploaded</span>
                                                       <span className="text-quaternary">• v{subDoc.version}</span>
                                                       <span className="text-quaternary truncate max-w-[180px] font-semibold" title={subDoc.fileName}>
                                                         • {subDoc.fileName}
@@ -3433,20 +4268,20 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                                                     </>
                                                   ) : (
                                                     <>
-                                                      <span className="text-error-muted font-bold bg-error-subtle px-1 py-0.2 rounded text-[8px] uppercase">Missing</span>
+                                                      <span className="text-error-muted font-bold bg-error-subtle px-1 py-0.2 rounded text-xs uppercase">Missing</span>
                                                       <span className="text-quaternary">• Empty slot</span>
                                                     </>
                                                   )}
                                                 </div>
 
                                                 {subDoc && subDoc.feedback && (
-                                                  <div className="text-[10px] text-error-muted bg-error-subtle border border-error-divider rounded-lg p-2 mt-1.5 font-sans flex items-center justify-between gap-2 ml-8">
+                                                  <div className="text-xs text-error-muted bg-error-subtle border border-error-divider rounded-lg p-2 mt-1.5 font-sans flex items-center justify-between gap-2 ml-8">
                                                     <span><strong>Feedback:</strong> {subDoc.feedback}</span>
                                                     {(currentUser.role === UserRole.ADMIN || currentUser.role === UserRole.DEPT_HEAD) && (
                                                       <button
                                                         type="button"
                                                         onClick={() => openDocRevisionEmail(subDoc)}
-                                                        className="text-[9px] font-bold uppercase font-mono px-2 py-0.5 bg-rose-600 text-white rounded cursor-pointer shrink-0"
+                                                        className="text-xs font-bold uppercase font-mono px-2 py-0.5 bg-rose-600 text-white rounded cursor-pointer shrink-0"
                                                       >
                                                         Email
                                                       </button>
@@ -3461,17 +4296,17 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                                                   <div className="flex items-center gap-1.5">
                                                     <div className="text-right">
                                                       {subDoc.status === 'approved' && (
-                                                        <span className="inline-flex items-center gap-1 text-[9px] font-bold text-success-bold font-mono">
+                                                        <span className="inline-flex items-center gap-1 text-xs font-bold text-success-bold font-mono">
                                                           <CheckCircle className="w-3 h-3 text-success" /> APPROVED
                                                         </span>
                                                       )}
                                                       {subDoc.status === 'rejected' && (
-                                                        <span className="inline-flex items-center gap-1 text-[9px] font-bold text-error-bold font-mono">
+                                                        <span className="inline-flex items-center gap-1 text-xs font-bold text-error-bold font-mono">
                                                           <XCircle className="w-3 h-3 text-error" /> REJECTED
                                                         </span>
                                                       )}
                                                       {subDoc.status === 'pending_review' && (
-                                                        <span className="inline-flex items-center gap-1 text-[9px] font-bold text-warning-bold font-mono">
+                                                        <span className="inline-flex items-center gap-1 text-xs font-bold text-warning-bold font-mono">
                                                           <Clock className="w-3 h-3 text-warning animate-pulse" /> PENDING
                                                         </span>
                                                       )}
@@ -3520,7 +4355,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                                                   </div>
                                                 ) : (
                                                   <div className="flex items-center gap-1.5">
-                                                    <span className="text-[9px] font-bold text-quaternary font-mono uppercase bg-surface-hover px-1.5 py-0.5 rounded">
+                                                    <span className="text-xs font-bold text-quaternary font-mono uppercase bg-surface-hover px-1.5 py-0.5 rounded">
                                                       MISSING
                                                     </span>
                                                     {(currentUser.id === selectedOffering.instructorId || currentUser.role === UserRole.ADMIN) && (
@@ -3617,7 +4452,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                           className="inline-flex items-center gap-2 bg-surface hover:bg-surface-hover text-secondary border border-amber-500/40 hover:border-amber-500 font-bold px-3 py-1.5 rounded-xl text-xs transition cursor-pointer shadow-sm"
                         >
                           <span className="font-mono text-brand">{offering.course?.code || 'Course'} ({offering.term} {offering.academicYear})</span>
-                          <span className="bg-rose-500/20 text-rose-600 dark:text-rose-400 text-[10px] px-1.5 py-0.5 rounded font-mono font-bold">
+                          <span className="bg-rose-500/20 text-rose-600 dark:text-rose-400 text-xs px-1.5 py-0.5 rounded font-mono font-bold">
                             {missingCats.length} missing
                           </span>
                         </button>
@@ -3652,13 +4487,13 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                             {off.course?.code}
                           </span>
                           <h3 className="text-sm font-bold text-primary mt-1">{off.course?.title}</h3>
-                          <p className="text-[11px] text-tertiary">Section {off.section} • {off.term} {off.academicYear}</p>
+                          <p className="text-xs text-tertiary">Section {off.section} • {off.term} {off.academicYear}</p>
                         </div>
 
                         <div className="text-right space-y-1 font-mono">
                           <p className="text-xs text-tertiary">Checklist Attainment</p>
                           <p className="text-sm font-bold text-brand">{approvedCount}/{totalCategories} Verified</p>
-                          <span className="text-[10px] bg-surface-hover text-tertiary px-1.5 py-0.5 rounded font-semibold">CLICK TO PREVIEW</span>
+                          <span className="text-xs bg-surface-hover text-tertiary px-1.5 py-0.5 rounded font-semibold">CLICK TO PREVIEW</span>
                         </div>
                       </div>
                     );
@@ -3679,7 +4514,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                         <div key={doc.id} className="flex flex-col md:flex-row md:items-center justify-between p-3 bg-surface border border-error-subtle rounded-xl gap-4">
                           <div>
                             <p className="text-xs font-bold text-primary-muted">{doc.course?.code}: {getCategoryLabel(doc.category)}</p>
-                            <p className="text-[10px] text-tertiary font-mono mt-1">File: {doc.fileName} • Ref: {doc.id}</p>
+                            <p className="text-xs text-tertiary font-mono mt-1">File: {doc.fileName} • Ref: {doc.id}</p>
                             <div className="mt-2 text-xs text-error-bolder font-sans italic bg-rose-100/50 p-2 rounded border border-error-subtle/50">
                               Feedback from reviewer: "{doc.feedback || 'Please review syllabus guidelines and re-submit.'}"
                             </div>
@@ -3744,11 +4579,11 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                 return false;
               }
 
-              if (reviewTermFilter && off.term !== reviewTermFilter) {
+              if (reviewTermFilter && off.term?.toLowerCase() !== reviewTermFilter.toLowerCase()) {
                 return false;
               }
 
-              if (reviewDeptFilter && course?.department !== reviewDeptFilter) {
+              if (reviewDeptFilter && course?.department?.toLowerCase().trim() !== reviewDeptFilter.toLowerCase().trim()) {
                 return false;
               }
 
@@ -3793,7 +4628,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                       <BookOpen className="w-5 h-5" />
                     </div>
                     <div>
-                      <p className="text-[11px] font-bold text-quaternary uppercase font-mono">Total Offerings</p>
+                      <p className="text-xs font-bold text-quaternary uppercase font-mono">Total Offerings</p>
                       <p className="text-lg font-bold text-primary">{totalOfferingsCount}</p>
                     </div>
                   </div>
@@ -3803,7 +4638,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                       <CheckCircle className="w-5 h-5" />
                     </div>
                     <div>
-                      <p className="text-[11px] font-bold text-quaternary uppercase font-mono">100% Complete</p>
+                      <p className="text-xs font-bold text-quaternary uppercase font-mono">100% Complete</p>
                       <div className="flex items-center gap-2">
                         <span className="text-lg font-bold text-emerald-600">{fullyCompleteCount}</span>
                         <span className="text-xs text-tertiary">({totalOfferingsCount > 0 ? Math.round((fullyCompleteCount / totalOfferingsCount) * 100) : 0}%)</span>
@@ -3816,7 +4651,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                       <AlertCircle className="w-5 h-5" />
                     </div>
                     <div>
-                      <p className="text-[11px] font-bold text-quaternary uppercase font-mono">Pending Portfolios</p>
+                      <p className="text-xs font-bold text-quaternary uppercase font-mono">Pending Portfolios</p>
                       <div className="flex items-center gap-2">
                         <span className="text-lg font-bold text-rose-600">{offeringsWithMissingList.length}</span>
                         <span className="text-xs text-tertiary">Need Attention</span>
@@ -3829,7 +4664,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                       <FileWarning className="w-5 h-5" />
                     </div>
                     <div>
-                      <p className="text-[11px] font-bold text-quaternary uppercase font-mono">Missing Files Total</p>
+                      <p className="text-xs font-bold text-quaternary uppercase font-mono">Missing Files Total</p>
                       <p className="text-lg font-bold text-amber-600">{totalMissingFilesCount} <span className="text-xs text-tertiary font-normal">items</span></p>
                     </div>
                   </div>
@@ -4012,7 +4847,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                                     Section {off.section} • {off.term} {off.academicYear}
                                   </span>
                                   {course?.department && (
-                                    <span className="text-[10px] text-quaternary font-medium bg-surface-hover px-2 py-0.5 rounded-md">
+                                    <span className="text-xs text-quaternary font-medium bg-surface-hover px-2 py-0.5 rounded-md">
                                       {course.department}
                                     </span>
                                   )}
@@ -4023,7 +4858,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                                 </h3>
 
                                 {off.instructorId === currentUser.id && (
-                                  <span className="inline-flex items-center gap-1 bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 font-bold font-mono text-[10px] px-2 py-0.5 rounded border border-indigo-500/25">
+                                  <span className="inline-flex items-center gap-1 bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 font-bold font-mono text-xs px-2 py-0.5 rounded border border-indigo-500/25">
                                     ★ Your Teaching Course (Self-Review / Admin Review)
                                   </span>
                                 )}
@@ -4032,11 +4867,11 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                                   <span className="flex items-center gap-1 font-semibold text-primary">
                                     <User className="w-3.5 h-3.5 text-brand" /> {instructor?.name || 'Unassigned Instructor'}
                                   </span>
-                                  <span className="text-tertiary font-mono text-[11px]">
+                                  <span className="text-tertiary font-mono text-xs">
                                     ({instructor?.email || 'No email registered'})
                                   </span>
                                   {lastReminder && (
-                                    <span className="inline-flex items-center gap-1 text-[10px] text-brand bg-brand/10 px-2 py-0.5 rounded-md font-mono font-semibold" title={lastReminder.details}>
+                                    <span className="inline-flex items-center gap-1 text-xs text-brand bg-brand/10 px-2 py-0.5 rounded-md font-mono font-semibold" title={lastReminder.details}>
                                       <Clock className="w-3 h-3" /> Reminded: {new Date(lastReminder.timestamp).toLocaleDateString()}
                                     </span>
                                   )}
@@ -4068,13 +4903,13 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
 
                               <div className="flex items-center justify-between">
                                 {isComplete ? (
-                                  <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-600 font-mono">
+                                  <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-600 font-mono">
                                     <CheckCircle className="w-3.5 h-3.5" /> All 16 Files Verified
                                   </span>
                                 ) : (
                                   <button
                                     onClick={() => setExpandedMissingOfferingId(isExpanded ? null : off.id)}
-                                    className="inline-flex items-center gap-1 text-[11px] font-bold text-rose-600 hover:text-rose-700 font-mono cursor-pointer transition"
+                                    className="inline-flex items-center gap-1 text-xs font-bold text-rose-600 hover:text-rose-700 font-mono cursor-pointer transition"
                                   >
                                     <AlertCircle className="w-3.5 h-3.5" />
                                     <span>{missingCats.length} Document{missingCats.length === 1 ? '' : 's'} Missing</span>
@@ -4116,7 +4951,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                           {/* Expandable Missing Categories Chip List */}
                           {!isComplete && (
                             <div className={`px-5 pb-4 pt-2 border-t border-amber-500/20 bg-amber-500/5 ${isExpanded ? 'block' : 'hidden'}`}>
-                              <p className="text-[11px] font-bold text-quaternary uppercase font-mono mb-2">
+                              <p className="text-xs font-bold text-quaternary uppercase font-mono mb-2">
                                 Missing Course Folder Components ({missingCats.length}):
                               </p>
                               <div className="flex flex-wrap items-center gap-2">
@@ -4294,15 +5129,12 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                     <select
                       value={archiveYearFilter}
                       onChange={(e) => setArchiveYearFilter(e.target.value)}
-                      className="bg-transparent text-secondary outline-none text-xs w-full cursor-pointer"
+                      className="bg-transparent text-secondary outline-none text-xs w-full cursor-pointer font-medium"
                     >
                       <option value="">All Years</option>
                       {availableYears.map(y => (
-                        <option key={y} value={y.toString()} className="text-primary">Year {y}</option>
+                        <option key={y} value={String(y)} className="text-primary">Year {y}</option>
                       ))}
-                      <option value="2025" className="text-primary font-bold">Year 2025</option>
-                      <option value="2026" className="text-primary font-bold">Year 2026</option>
-                      <option value="2024" className="text-primary font-bold">Year 2024</option>
                     </select>
                   </div>
 
@@ -4312,12 +5144,12 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                     <select
                       value={archiveTermFilter}
                       onChange={(e) => setArchiveTermFilter(e.target.value)}
-                      className="bg-transparent text-secondary outline-none text-xs w-full cursor-pointer"
+                      className="bg-transparent text-secondary outline-none text-xs w-full cursor-pointer font-medium"
                     >
                       <option value="">All Terms</option>
-                      <option value="SPRING" className="text-primary">Spring</option>
-                      <option value="SUMMER" className="text-primary">Summer</option>
-                      <option value="FALL" className="text-primary">Fall</option>
+                      <option value="Spring" className="text-primary">Spring</option>
+                      <option value="Summer" className="text-primary">Summer</option>
+                      <option value="Fall" className="text-primary">Fall</option>
                     </select>
                   </div>
 
@@ -4327,7 +5159,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                     <select
                       value={archiveDeptFilter}
                       onChange={(e) => setArchiveDeptFilter(e.target.value)}
-                      className="bg-transparent text-secondary outline-none text-xs w-full cursor-pointer"
+                      className="bg-transparent text-secondary outline-none text-xs w-full cursor-pointer font-medium"
                     >
                       <option value="">All Depts</option>
                       {availableDepts.map(d => (
@@ -4342,11 +5174,11 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                     <select
                       value={archiveCourseFilter}
                       onChange={(e) => setArchiveCourseFilter(e.target.value)}
-                      className="bg-transparent text-secondary outline-none text-xs w-full cursor-pointer"
+                      className="bg-transparent text-secondary outline-none text-xs w-full cursor-pointer font-medium"
                     >
                       <option value="">All Courses</option>
-                      {courses.map(c => (
-                        <option key={c.id} value={c.id} className="text-primary">{c.code}</option>
+                      {availableCourseOptions.map(c => (
+                        <option key={c.code} value={c.code} className="text-primary">{c.code} {c.title ? `— ${c.title}` : ''}</option>
                       ))}
                     </select>
                   </div>
@@ -4357,7 +5189,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                     <select
                       value={archiveCategoryFilter}
                       onChange={(e) => setArchiveCategoryFilter(e.target.value)}
-                      className="bg-transparent text-secondary outline-none text-xs w-full cursor-pointer"
+                      className="bg-transparent text-secondary outline-none text-xs w-full cursor-pointer font-medium"
                     >
                       <option value="">All Requirements</option>
                       {categoriesList.filter(c => c.isActive !== false).map(cat => (
@@ -4372,7 +5204,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                     <select
                       value={archiveStatusFilter}
                       onChange={(e) => setArchiveStatusFilter(e.target.value)}
-                      className="bg-transparent text-secondary outline-none text-xs w-full cursor-pointer"
+                      className="bg-transparent text-secondary outline-none text-xs w-full cursor-pointer font-medium"
                     >
                       <option value="">All Statuses</option>
                       <option value="approved" className="text-primary">Approved</option>
@@ -4387,51 +5219,51 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-surface border border-subtle rounded-xl p-3 shadow-sm">
                 {/* Active Filter Chips */}
                 <div className="flex flex-wrap items-center gap-1.5 text-xs">
-                  <span className="text-[10px] uppercase font-mono font-bold text-quaternary">Active Filters:</span>
+                  <span className="text-xs uppercase font-mono font-bold text-quaternary">Active Filters:</span>
                   {archiveSearch && (
-                    <span className="bg-brand-subtle text-brand border border-brand/20 px-2 py-0.5 rounded-lg flex items-center gap-1 font-mono text-[11px]">
+                    <span className="bg-brand-subtle text-brand border border-brand/20 px-2 py-0.5 rounded-lg flex items-center gap-1 font-mono text-xs">
                       Search: "{archiveSearch}"
                       <button onClick={() => setArchiveSearch('')} className="hover:text-rose-500 cursor-pointer"><X className="w-3 h-3" /></button>
                     </span>
                   )}
                   {archiveYearFilter && (
-                    <span className="bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-blue-900 px-2 py-0.5 rounded-lg flex items-center gap-1 font-mono text-[11px]">
+                    <span className="bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-blue-900 px-2 py-0.5 rounded-lg flex items-center gap-1 font-mono text-xs">
                       Year: {archiveYearFilter}
                       <button onClick={() => setArchiveYearFilter('')} className="hover:text-rose-500 cursor-pointer"><X className="w-3 h-3" /></button>
                     </span>
                   )}
                   {archiveTermFilter && (
-                    <span className="bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-900 px-2 py-0.5 rounded-lg flex items-center gap-1 font-mono text-[11px]">
+                    <span className="bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-900 px-2 py-0.5 rounded-lg flex items-center gap-1 font-mono text-xs">
                       Term: {archiveTermFilter}
                       <button onClick={() => setArchiveTermFilter('')} className="hover:text-rose-500 cursor-pointer"><X className="w-3 h-3" /></button>
                     </span>
                   )}
                   {archiveDeptFilter && (
-                    <span className="bg-purple-50 dark:bg-purple-950/40 text-purple-600 dark:text-purple-400 border border-purple-200 dark:border-purple-900 px-2 py-0.5 rounded-lg flex items-center gap-1 font-mono text-[11px]">
+                    <span className="bg-purple-50 dark:bg-purple-950/40 text-purple-600 dark:text-purple-400 border border-purple-200 dark:border-purple-900 px-2 py-0.5 rounded-lg flex items-center gap-1 font-mono text-xs">
                       Dept: {archiveDeptFilter}
                       <button onClick={() => setArchiveDeptFilter('')} className="hover:text-rose-500 cursor-pointer"><X className="w-3 h-3" /></button>
                     </span>
                   )}
                   {archiveCourseFilter && (
-                    <span className="bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-900 px-2 py-0.5 rounded-lg flex items-center gap-1 font-mono text-[11px]">
-                      Course: {courses.find(c => c.id === archiveCourseFilter)?.code || archiveCourseFilter}
+                    <span className="bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-900 px-2 py-0.5 rounded-lg flex items-center gap-1 font-mono text-xs">
+                      Course: {archiveCourseFilter}
                       <button onClick={() => setArchiveCourseFilter('')} className="hover:text-rose-500 cursor-pointer"><X className="w-3 h-3" /></button>
                     </span>
                   )}
                   {archiveCategoryFilter && (
-                    <span className="bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-900 px-2 py-0.5 rounded-lg flex items-center gap-1 font-mono text-[11px]">
+                    <span className="bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-900 px-2 py-0.5 rounded-lg flex items-center gap-1 font-mono text-xs">
                       Requirement: {getCategoryLabel(archiveCategoryFilter)}
                       <button onClick={() => setArchiveCategoryFilter('')} className="hover:text-rose-500 cursor-pointer"><X className="w-3 h-3" /></button>
                     </span>
                   )}
                   {archiveStatusFilter && (
-                    <span className="bg-cyan-50 dark:bg-cyan-950/40 text-cyan-600 dark:text-cyan-400 border border-cyan-200 dark:border-cyan-900 px-2 py-0.5 rounded-lg flex items-center gap-1 font-mono text-[11px]">
+                    <span className="bg-cyan-50 dark:bg-cyan-950/40 text-cyan-600 dark:text-cyan-400 border border-cyan-200 dark:border-cyan-900 px-2 py-0.5 rounded-lg flex items-center gap-1 font-mono text-xs">
                       Status: {archiveStatusFilter.replace('_', ' ')}
                       <button onClick={() => setArchiveStatusFilter('')} className="hover:text-rose-500 cursor-pointer"><X className="w-3 h-3" /></button>
                     </span>
                   )}
                   {!archiveSearch && !archiveYearFilter && !archiveTermFilter && !archiveDeptFilter && !archiveCourseFilter && !archiveCategoryFilter && !archiveStatusFilter && (
-                    <span className="text-tertiary italic text-[11px]">None (Showing full archive)</span>
+                    <span className="text-tertiary italic text-xs">None (Showing full archive)</span>
                   )}
                 </div>
 
@@ -4445,7 +5277,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                     title="Table View"
                   >
                     <List className="w-3.5 h-3.5" />
-                    <span className="hidden md:inline text-[11px]">Table</span>
+                    <span className="hidden md:inline text-xs">Table</span>
                   </button>
 
                   <button
@@ -4456,7 +5288,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                     title="Cards View"
                   >
                     <Grid className="w-3.5 h-3.5" />
-                    <span className="hidden md:inline text-[11px]">Cards</span>
+                    <span className="hidden md:inline text-xs">Cards</span>
                   </button>
 
                   <button
@@ -4467,7 +5299,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                     title="Group by Course"
                   >
                     <FolderTree className="w-3.5 h-3.5" />
-                    <span className="hidden md:inline text-[11px]">By Course</span>
+                    <span className="hidden md:inline text-xs">By Course</span>
                   </button>
 
                   <button
@@ -4478,7 +5310,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                     title="Group by Category"
                   >
                     <LayoutGrid className="w-3.5 h-3.5" />
-                    <span className="hidden md:inline text-[11px]">By Category</span>
+                    <span className="hidden md:inline text-xs">By Category</span>
                   </button>
                 </div>
               </div>
@@ -4507,7 +5339,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                     <div className="bg-surface border border-subtle rounded-2xl overflow-hidden shadow-sm">
                       <table className="w-full text-left border-collapse">
                         <thead>
-                          <tr className="border-b border-subtle bg-background text-[10px] font-mono uppercase text-quaternary tracking-wider">
+                          <tr className="border-b border-subtle bg-background text-xs font-mono uppercase text-quaternary tracking-wider">
                             <th className="py-3 px-4">Course & Academic Session</th>
                             <th className="py-3 px-4">Category & File Name</th>
                             <th className="py-3 px-4">Uploaded By</th>
@@ -4522,29 +5354,29 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                               <tr key={doc.id} className="hover:bg-background/80 transition group">
                                 <td className="py-3 px-4">
                                   <p className="font-mono font-bold text-brand">{doc.course?.code}</p>
-                                  <p className="text-[10px] text-tertiary font-mono mt-0.5">
+                                  <p className="text-xs text-tertiary font-mono mt-0.5">
                                     {doc.offering?.term} {doc.offering?.academicYear} {doc.course?.department ? `• ${doc.course.department}` : ''}
                                   </p>
                                 </td>
                                 <td className="py-3 px-4">
                                   <p className="font-semibold text-primary">{categoryLabel}</p>
-                                  <p className="text-[10px] text-tertiary font-mono mt-0.5 max-w-[220px] truncate" title={doc.fileName}>{doc.fileName}</p>
+                                  <p className="text-xs text-tertiary font-mono mt-0.5 max-w-[220px] truncate" title={doc.fileName}>{doc.fileName}</p>
                                 </td>
                                 <td className="py-3 px-4">
                                   <p className="font-medium text-secondary">{doc.uploadedBy.split('@')[0]}</p>
-                                  <p className="text-[10px] text-tertiary font-mono">{doc.uploadedAt ? new Date(doc.uploadedAt).toLocaleDateString() : ''}</p>
+                                  <p className="text-xs text-tertiary font-mono">{doc.uploadedAt ? new Date(doc.uploadedAt).toLocaleDateString() : ''}</p>
                                 </td>
                                 <td className="py-3 px-4 text-center">
                                   {doc.status === 'approved' ? (
-                                    <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider bg-success-subtle text-success-bold border border-success-subtle">
+                                    <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold uppercase tracking-wider bg-success-subtle text-success-bold border border-success-subtle">
                                       <CheckCircle className="w-3.5 h-3.5" /> Approved
                                     </span>
                                   ) : doc.status === 'rejected' ? (
-                                    <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider bg-error-subtle text-error-bold border border-error-subtle">
+                                    <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold uppercase tracking-wider bg-error-subtle text-error-bold border border-error-subtle">
                                       <AlertCircle className="w-3.5 h-3.5" /> Rejected
                                     </span>
                                   ) : (
-                                    <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider bg-warning-subtle text-warning-bold border border-warning-subtle">
+                                    <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold uppercase tracking-wider bg-warning-subtle text-warning-bold border border-warning-subtle">
                                       <Clock className="w-3.5 h-3.5" /> Pending
                                     </span>
                                   )}
@@ -4605,11 +5437,11 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                                   <div className="font-mono font-bold text-sm text-brand">
                                     {doc.course?.code}: {doc.course?.title}
                                   </div>
-                                  <div className="text-[11px] text-tertiary font-mono">
+                                  <div className="text-xs text-tertiary font-mono">
                                     {doc.offering?.term} {doc.offering?.academicYear} {doc.course?.department ? `• ${doc.course.department}` : ''}
                                   </div>
                                 </div>
-                                <span className={`px-2 py-0.5 rounded-lg text-[10px] font-bold uppercase tracking-wider border shrink-0 ${statusColors}`}>
+                                <span className={`px-2 py-0.5 rounded-lg text-xs font-bold uppercase tracking-wider border shrink-0 ${statusColors}`}>
                                   {doc.status.replace('_', ' ')}
                                 </span>
                               </div>
@@ -4625,8 +5457,8 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                             </div>
 
                             <div className="pt-2 border-t border-subtle flex items-center justify-between text-xs">
-                                <div className="text-[10px] text-quaternary font-mono flex items-center gap-1">
-                                  <span className="text-[10px] text-tertiary">v{doc.version}</span>
+                                <div className="text-xs text-quaternary font-mono flex items-center gap-1">
+                                  <span className="text-xs text-tertiary">v{doc.version}</span>
                                 </div>
                               <div className="flex items-center gap-2">
                                 <button
@@ -4678,7 +5510,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                               <h3 className="text-xs font-bold font-mono text-brand flex items-center gap-2">
                                 <BookOpen className="w-4 h-4 text-brand" /> {courseHeader}
                               </h3>
-                              <span className="text-[10px] font-mono bg-brand-subtle text-brand px-2 py-0.5 rounded-full font-bold">
+                              <span className="text-xs font-mono bg-brand-subtle text-brand px-2 py-0.5 rounded-full font-bold">
                                 {docsInCourse.length} {docsInCourse.length === 1 ? 'file' : 'files'}
                               </span>
                             </div>
@@ -4689,10 +5521,10 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                                     <span className="text-xs font-bold text-primary">
                                       {getCategoryLabel(doc.category)}
                                     </span>
-                                    <p className="text-[11px] text-tertiary font-mono truncate max-w-md">{doc.fileName}</p>
+                                    <p className="text-xs text-tertiary font-mono truncate max-w-md">{doc.fileName}</p>
                                   </div>
                                   <div className="flex items-center gap-3 shrink-0">
-                                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
+                                    <span className={`px-2 py-0.5 rounded text-xs font-bold uppercase ${
                                       doc.status === 'approved' ? 'bg-success-subtle text-success-bold' :
                                       doc.status === 'rejected' ? 'bg-error-subtle text-error-bold' : 'bg-warning-subtle text-warning-bold'
                                     }`}>
@@ -4734,7 +5566,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                               <h3 className="text-xs font-bold font-mono text-purple-600 dark:text-purple-400 flex items-center gap-2">
                                 <Filter className="w-4 h-4 text-purple-500" /> {catHeader}
                               </h3>
-                              <span className="text-[10px] font-mono bg-purple-50 dark:bg-purple-950/40 text-purple-600 dark:text-purple-400 px-2 py-0.5 rounded-full font-bold">
+                              <span className="text-xs font-mono bg-purple-50 dark:bg-purple-950/40 text-purple-600 dark:text-purple-400 px-2 py-0.5 rounded-full font-bold">
                                 {docsInCat.length} {docsInCat.length === 1 ? 'file' : 'files'}
                               </span>
                             </div>
@@ -4745,10 +5577,10 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                                     <span className="text-xs font-bold text-brand font-mono">
                                       {doc.course?.code} ({doc.offering?.term} {doc.offering?.academicYear})
                                     </span>
-                                    <p className="text-[11px] text-tertiary font-mono truncate max-w-md">{doc.fileName}</p>
+                                    <p className="text-xs text-tertiary font-mono truncate max-w-md">{doc.fileName}</p>
                                   </div>
                                   <div className="flex items-center gap-3 shrink-0">
-                                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
+                                    <span className={`px-2 py-0.5 rounded text-xs font-bold uppercase ${
                                       doc.status === 'approved' ? 'bg-success-subtle text-success-bold' :
                                       doc.status === 'rejected' ? 'bg-error-subtle text-error-bold' : 'bg-warning-subtle text-warning-bold'
                                     }`}>
@@ -4814,7 +5646,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                         {/* Top bar of log entry */}
                         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-divider pb-3">
                           <div className="flex items-center gap-2">
-                            <span className={`px-2 py-0.5 rounded text-[9px] font-bold font-mono tracking-wider border ${
+                            <span className={`px-2 py-0.5 rounded text-xs font-bold font-mono tracking-wider border ${
                               isSystemInit ? 'bg-surface-hover text-secondary-muted border-subtle' :
                               log.action.includes('UPLOAD') ? 'bg-brand-subtle text-brand-bold border-brand-divider' :
                               log.action.includes('APPROVE') ? 'bg-success-subtle text-success-bold border-emerald-100' :
@@ -4823,7 +5655,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                             }`}>
                               {log.action}
                             </span>
-                            <span className="text-[10px] text-quaternary font-mono">{new Date(log.timestamp).toLocaleString()}</span>
+                            <span className="text-xs text-quaternary font-mono">{new Date(log.timestamp).toLocaleString()}</span>
                           </div>
                           
                           <div className="flex items-center gap-2 text-xs">
@@ -4849,7 +5681,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                 <div>
                   <h2 className="text-xl font-bold text-primary">Registered University Personnel</h2>
                   <p className="text-xs text-tertiary mt-1">
-                    Provision Central Department Staff and Board Auditor access clearances.
+                    Provision Central Department Staff and Board Auditor / Coordinator access clearances.
                   </p>
                 </div>
                 <button
@@ -4877,9 +5709,9 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
 
                         <div className="min-w-0 flex-1">
                           <h3 className="text-sm font-bold text-primary truncate">{u.name}</h3>
-                          <p className="text-[11px] text-tertiary truncate">{u.email}</p>
+                          <p className="text-xs text-tertiary truncate">{u.email}</p>
                           {u.pendingApproval && (
-                            <span className="inline-flex items-center gap-1 bg-warning-subtle text-warning-bold border border-warning-subtle rounded px-1.5 py-0.5 text-[9px] font-bold font-mono tracking-wider mt-1.5">
+                            <span className="inline-flex items-center gap-1 bg-warning-subtle text-warning-bold border border-warning-subtle rounded px-1.5 py-0.5 text-xs font-bold font-mono tracking-wider mt-1.5">
                               <Clock className="w-3 h-3 text-warning animate-pulse" /> PENDING APPROVAL
                             </span>
                           )}
@@ -4891,7 +5723,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                         {isEditing ? (
                           <div className="space-y-3">
                             <div>
-                              <label className="block text-[9px] font-bold text-quaternary uppercase font-mono tracking-wide mb-1">Clearance Role</label>
+                              <label className="block text-xs font-bold text-quaternary uppercase font-mono tracking-wide mb-1">Clearance Role</label>
                               <select
                                 value={editRole}
                                 onChange={(e) => setEditRole(e.target.value as UserRole)}
@@ -4899,12 +5731,12 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                               >
                                 <option value={UserRole.INSTRUCTOR}>INSTRUCTOR</option>
                                 <option value={UserRole.DEPT_HEAD}>DEPARTMENT HEAD</option>
-                                <option value={UserRole.AUDITOR}>BOARD AUDITOR</option>
+                                <option value={UserRole.AUDITOR}>BOARD AUDITOR / COORDINATOR</option>
                                 <option value={UserRole.ADMIN}>SYSTEM ADMIN</option>
                               </select>
                             </div>
                             <div>
-                              <label className="block text-[9px] font-bold text-quaternary uppercase font-mono tracking-wide mb-1">Assigned Department</label>
+                              <label className="block text-xs font-bold text-quaternary uppercase font-mono tracking-wide mb-1">Assigned Department</label>
                               <input
                                 type="text"
                                 value={editDept}
@@ -4917,8 +5749,8 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                         ) : (
                           <div className="flex flex-wrap items-center justify-between gap-2">
                             <div>
-                              <p className="text-[9px] font-bold text-quaternary uppercase font-mono tracking-wide">Security Clearance</p>
-                              <span className={`inline-block px-2 py-0.5 rounded text-[9px] font-bold font-mono tracking-wider border mt-1 ${
+                              <p className="text-xs font-bold text-quaternary uppercase font-mono tracking-wide">Security Clearance</p>
+                              <span className={`inline-block px-2 py-0.5 rounded text-xs font-bold font-mono tracking-wider border mt-1 ${
                                 u.role === UserRole.ADMIN ? 'bg-error-subtle text-error-bold border-error-divider' :
                                 u.role === UserRole.DEPT_HEAD ? 'bg-brand-subtle text-brand-bold border-brand-divider' :
                                 u.role === UserRole.AUDITOR ? 'bg-brand-subtle text-brand-bold border-brand-divider' :
@@ -4929,8 +5761,8 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                             </div>
 
                             <div className="text-right">
-                              <p className="text-[9px] font-bold text-quaternary uppercase font-mono tracking-wide">Department</p>
-                              <span className="text-[11px] text-secondary font-semibold mt-1 block">
+                              <p className="text-xs font-bold text-quaternary uppercase font-mono tracking-wide">Department</p>
+                              <span className="text-xs text-secondary font-semibold mt-1 block">
                                 {u.department || 'CENTRAL'}
                               </span>
                             </div>
@@ -5010,7 +5842,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                     <SlidersHorizontal className="w-4 h-4 text-brand" />
                     <span className="text-xs font-bold text-primary uppercase font-mono tracking-wider">Active Document Slots ({categoriesList.filter(c => c.isActive !== false).length})</span>
                   </div>
-                  <span className="text-[10px] text-quaternary font-mono">
+                  <span className="text-xs text-quaternary font-mono">
                     {categoriesList.filter(c => c.isCore && c.isActive !== false).length} Core Mandatory • {categoriesList.filter(c => !c.isCore && c.isActive !== false).length} Optional
                   </span>
                 </div>
@@ -5021,20 +5853,20 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                       <div className="space-y-1">
                         <div className="flex items-center gap-2.5">
                           <h4 className="text-sm font-bold text-primary">{cat.label}</h4>
-                          <span className="bg-subtle/40 text-secondary font-mono text-[10px] px-2 py-0.5 rounded border border-subtle">
+                          <span className="bg-subtle/40 text-secondary font-mono text-xs px-2 py-0.5 rounded border border-subtle">
                             {cat.group}
                           </span>
                           {cat.isCore ? (
-                            <span className="bg-brand-subtle text-brand-bold border border-brand-divider text-[9px] font-bold font-mono px-2 py-0.5 rounded uppercase">
+                            <span className="bg-brand-subtle text-brand-bold border border-brand-divider text-xs font-bold font-mono px-2 py-0.5 rounded uppercase">
                               Core Mandatory
                             </span>
                           ) : (
-                            <span className="bg-surface-hover text-quaternary text-[9px] font-bold font-mono px-2 py-0.5 rounded uppercase border border-subtle">
+                            <span className="bg-surface-hover text-quaternary text-xs font-bold font-mono px-2 py-0.5 rounded uppercase border border-subtle">
                               Optional Slot
                             </span>
                           )}
                         </div>
-                        <p className="text-[10px] font-mono text-quaternary">
+                        <p className="text-xs font-mono text-quaternary">
                           Internal Key: <code className="bg-background px-1 py-0.5 rounded text-tertiary">{cat.id}</code>
                         </p>
                       </div>
@@ -5090,7 +5922,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                 <div className="bg-surface border border-subtle rounded-2xl overflow-hidden shadow-sm">
                   <div className="p-4 bg-rose-500/5 border-b border-rose-500/15 flex items-center justify-between">
                     <span className="text-xs font-bold text-rose-700 uppercase font-mono tracking-wider">Soft-Deleted Archives ({trashDocuments.length})</span>
-                    <span className="text-[10px] text-tertiary font-mono">Protected by 30-day Retention Guard</span>
+                    <span className="text-xs text-tertiary font-mono">Protected by 30-day Retention Guard</span>
                   </div>
 
                   <div className="divide-y divide-subtle">
@@ -5104,15 +5936,15 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                           <div className="space-y-1">
                             <div className="flex items-center gap-2">
                               <span className="text-xs font-bold text-primary">{doc.fileName}</span>
-                              <span className="bg-subtle/50 text-secondary text-[10px] font-mono px-2 py-0.5 rounded">
+                              <span className="bg-subtle/50 text-secondary text-xs font-mono px-2 py-0.5 rounded">
                                 {catMeta?.label || doc.category}
                               </span>
                             </div>
-                            <p className="text-[11px] text-tertiary">
+                            <p className="text-xs text-tertiary">
                               Course: <span className="font-semibold text-secondary">{course?.code || 'N/A'}</span> ({offering?.term} {offering?.academicYear}) • Uploaded by: {doc.uploadedBy}
                             </p>
                             {doc.deletedAt && (
-                              <p className="text-[10px] font-mono text-quaternary">
+                              <p className="text-xs font-mono text-quaternary">
                                 Deleted At: {new Date(doc.deletedAt).toLocaleString()}
                               </p>
                             )}
@@ -5143,14 +5975,629 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
               )}
             </div>
           )}
-        </main>
+          {/* Signature Modal */}
+      {showSignatureModal && selectedOffering && (
+        <div role="dialog" aria-modal="true" aria-label="Digital Signature Modal" className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={() => setShowSignatureModal(false)}></div>
+          <div className="bg-surface text-primary border border-subtle shadow-2xl rounded-2xl p-6 w-[95%] max-w-xl z-10 relative max-h-[90vh] overflow-y-auto">
+            
+            <div className="flex items-center justify-between border-b border-subtle pb-3 mb-4">
+              <div className="flex items-center gap-2.5">
+                <span className="w-9 h-9 rounded-xl bg-brand/10 text-brand flex items-center justify-center font-bold">
+                  <Shield className="w-5 h-5" />
+                </span>
+                <div>
+                  <h2 className="text-base font-bold text-primary">
+                    {signatureAction === 'submit' ? 'Sign & Submit Course Portfolio' : 'Formal Department Endorsement & Seal'}
+                  </h2>
+                  <p className="text-xs text-tertiary">
+                    {signatureAction === 'submit' ? 'Instructor Digital Verification' : 'Department Head Accreditation Endorsement'}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowSignatureModal(false)}
+                className="p-1.5 text-quaternary hover:text-primary rounded-lg transition cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="text-xs text-secondary mb-4 bg-background p-3 rounded-xl border border-subtle leading-relaxed">
+              {signatureAction === 'submit' ? (
+                <p>I certify that all assessment questions, OBE calculations, and grade tabulation sheets are complete, accurate, and reflect the actual student cohort. I confirm that representative student answer scripts are authentic student artifacts.</p>
+              ) : (
+                <p>I have reviewed this course file for academic quality, syllabus adherence, and OBE compliance. I formally endorse this portfolio for departmental records and accreditation archiving.</p>
+              )}
+            </div>
+
+            {/* Signature Creation Mode Tabs */}
+            <div className="mb-4">
+              <label className="block text-xs font-bold text-tertiary uppercase font-mono mb-2">Choose Signature Method:</label>
+              <div className="grid grid-cols-3 gap-2 bg-background p-1 rounded-xl border border-subtle">
+                <button
+                  type="button"
+                  onClick={() => setSignatureMode('draw')}
+                  className={`py-2 px-2.5 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer ${
+                    signatureMode === 'draw'
+                      ? 'bg-surface text-brand shadow-xs border border-subtle'
+                      : 'text-tertiary hover:text-primary'
+                  }`}
+                >
+                  <span>✍️</span>
+                  <span>Draw</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setSignatureMode('type')}
+                  className={`py-2 px-2.5 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer ${
+                    signatureMode === 'type'
+                      ? 'bg-surface text-brand shadow-xs border border-subtle'
+                      : 'text-tertiary hover:text-primary'
+                  }`}
+                >
+                  <span>🔤</span>
+                  <span>Type Name</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setSignatureMode('upload')}
+                  className={`py-2 px-2.5 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer ${
+                    signatureMode === 'upload'
+                      ? 'bg-surface text-brand shadow-xs border border-subtle'
+                      : 'text-tertiary hover:text-primary'
+                  }`}
+                >
+                  <span>📤</span>
+                  <span>Upload Scan</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Mode 1: DRAW SIGNATURE */}
+            {signatureMode === 'draw' && (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold text-secondary">Draw your signature with mouse or touch:</span>
+                  <button 
+                    type="button"
+                    onClick={() => sigCanvasRef.current?.clear()} 
+                    className="text-xs font-bold text-brand hover:underline cursor-pointer"
+                  >
+                    Clear Canvas
+                  </button>
+                </div>
+                <div className="border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-xl overflow-hidden bg-white shadow-inner">
+                  <SignatureCanvas
+                    ref={sigCanvasRef}
+                    penColor="#0f172a"
+                    canvasProps={{ className: 'signature-canvas w-full h-36 cursor-crosshair', width: 500, height: 144 }}
+                  />
+                </div>
+                <p className="text-xs text-tertiary text-center font-mono">Draw within the box above using pen or finger</p>
+              </div>
+            )}
+
+            {/* Mode 2: TYPE STYLED SIGNATURE */}
+            {signatureMode === 'type' && (
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-xs font-semibold text-secondary mb-1">Your Full Official Name:</label>
+                  <input
+                    type="text"
+                    value={typedSignatureName}
+                    onChange={(e) => setTypedSignatureName(e.target.value)}
+                    placeholder="e.g. Dr. Alice Smith"
+                    className="w-full bg-background border border-subtle rounded-xl py-2 px-3 text-xs text-primary font-semibold focus:outline-none focus:ring-2 focus:ring-brand/20"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-tertiary uppercase font-mono mb-1.5">Select Calligraphy Style:</label>
+                  <div className="grid grid-cols-2 gap-2">
+                    {[
+                      { name: 'Classic Cursive', sample: 'Great Vibes' },
+                      { name: 'Executive Script', sample: 'Dancing Script' },
+                      { name: 'Academic Signature', sample: 'Sacramento' },
+                      { name: 'Modern Handcrafted', sample: 'Caveat' }
+                    ].map((style, idx) => (
+                      <button
+                        key={idx}
+                        type="button"
+                        onClick={() => setTypedSignatureFont(idx)}
+                        className={`p-2.5 rounded-xl border text-left transition cursor-pointer ${
+                          typedSignatureFont === idx
+                            ? 'bg-brand/5 border-brand ring-1 ring-brand shadow-xs'
+                            : 'bg-background hover:bg-surface-hover border-subtle'
+                        }`}
+                      >
+                        <span className="text-xs font-bold text-quaternary block uppercase font-mono mb-1">{style.name}</span>
+                        <span 
+                          className="block text-slate-800 dark:text-slate-200 truncate py-1"
+                          style={{
+                            fontFamily: idx === 0 ? '"Great Vibes", cursive' :
+                                        idx === 1 ? '"Dancing Script", cursive' :
+                                        idx === 2 ? '"Sacramento", cursive' :
+                                        '"Caveat", cursive',
+                            fontSize: idx === 0 || idx === 2 ? '22px' : '18px'
+                          }}
+                        >
+                          {typedSignatureName || 'Signature'}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Styled Signature Live Preview Card */}
+                <div className="p-4 bg-white rounded-xl border-2 border-slate-200 shadow-sm text-center">
+                  <span className="text-xs uppercase font-bold text-slate-400 font-mono block mb-1">Generated Digital Signature Preview</span>
+                  <div 
+                    className="text-slate-900 py-3 text-3xl select-none"
+                    style={{
+                      fontFamily: typedSignatureFont === 0 ? '"Great Vibes", cursive' :
+                                  typedSignatureFont === 1 ? '"Dancing Script", cursive' :
+                                  typedSignatureFont === 2 ? '"Sacramento", cursive' :
+                                  '"Caveat", cursive',
+                      fontSize: typedSignatureFont === 0 || typedSignatureFont === 2 ? '34px' : '28px'
+                    }}
+                  >
+                    {typedSignatureName || currentUser?.name || 'Your Signature'}
+                  </div>
+                  <div className="w-48 h-0.5 bg-slate-400 mx-auto rounded-full mt-1"></div>
+                </div>
+              </div>
+            )}
+
+            {/* Mode 3: UPLOAD SCANNED IMAGE */}
+            {signatureMode === 'upload' && (
+              <div className="space-y-3">
+                <span className="text-xs font-semibold text-secondary block">Upload scanned signature (PNG / JPG / WEBP):</span>
+                
+                {uploadedSignatureUrl ? (
+                  <div className="p-4 bg-white rounded-xl border-2 border-slate-200 text-center space-y-3 shadow-sm">
+                    <img 
+                      src={uploadedSignatureUrl} 
+                      alt="Uploaded Signature Preview" 
+                      className="max-h-28 mx-auto object-contain"
+                    />
+                    <div className="flex items-center justify-center gap-2">
+                      <label className="text-xs font-bold text-brand hover:underline cursor-pointer">
+                        <span>Change Image</span>
+                        <input
+                          type="file"
+                          accept="image/png,image/jpeg,image/jpg,image/webp"
+                          className="hidden"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file) {
+                              const reader = new FileReader();
+                              reader.onload = () => setUploadedSignatureUrl(reader.result as string);
+                              reader.readAsDataURL(file);
+                            }
+                          }}
+                        />
+                      </label>
+                      <span className="text-slate-300">•</span>
+                      <button
+                        type="button"
+                        onClick={() => setUploadedSignatureUrl(null)}
+                        className="text-xs font-bold text-rose-500 hover:underline cursor-pointer"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <label className="border-2 border-dashed border-slate-300 dark:border-slate-700 hover:border-brand rounded-2xl p-8 flex flex-col items-center justify-center gap-2 bg-background hover:bg-surface-hover transition cursor-pointer">
+                    <UploadCloud className="w-8 h-8 text-brand" />
+                    <span className="text-xs font-bold text-primary">Click to select signature image</span>
+                    <span className="text-xs text-tertiary font-mono">Supports transparent PNG, JPG, or WEBP (Max 5MB)</span>
+                    <input
+                      type="file"
+                      accept="image/png,image/jpeg,image/jpg,image/webp"
+                      className="hidden"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) {
+                          if (file.size > 5 * 1024 * 1024) {
+                            showNotification('Image size exceeds 5MB limit', 'error');
+                            return;
+                          }
+                          const reader = new FileReader();
+                          reader.onload = () => setUploadedSignatureUrl(reader.result as string);
+                          reader.readAsDataURL(file);
+                        }
+                      }}
+                    />
+                  </label>
+                )}
+              </div>
+            )}
+
+            {/* Modal Actions */}
+            <div className="flex items-center justify-end gap-3 mt-6 pt-4 border-t border-subtle">
+              <button
+                type="button"
+                onClick={() => setShowSignatureModal(false)}
+                className="px-4 py-2 font-semibold text-secondary hover:text-primary bg-background rounded-xl border border-subtle transition text-xs cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  let sigBase64 = '';
+
+                  if (signatureMode === 'draw') {
+                    if (sigCanvasRef.current?.isEmpty()) {
+                      showNotification('Please draw your signature before confirming.', 'error');
+                      return;
+                    }
+                    sigBase64 = sigCanvasRef.current?.getTrimmedCanvas().toDataURL('image/png') || '';
+                  } else if (signatureMode === 'upload') {
+                    if (!uploadedSignatureUrl) {
+                      showNotification('Please upload a signature image file.', 'error');
+                      return;
+                    }
+                    sigBase64 = uploadedSignatureUrl;
+                  } else if (signatureMode === 'type') {
+                    const nameToSign = typedSignatureName.trim() || currentUser?.name || 'Faculty Signature';
+                    sigBase64 = generateTypedSignatureDataUrl(nameToSign, typedSignatureFont);
+                  }
+
+                  if (!sigBase64) {
+                    showNotification('Failed to generate signature. Please try again.', 'error');
+                    return;
+                  }
+                  
+                  const endpoint = signatureAction === 'submit' 
+                    ? `/api/offerings/${selectedOffering.id}/submit` 
+                    : `/api/offerings/${selectedOffering.id}/approve`;
+                  
+                  try {
+                    const res = await fetch(endpoint, {
+                      method: 'PUT',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ signatureUrl: sigBase64 })
+                    });
+                    
+                    if (res.ok) {
+                      showNotification(`Portfolio successfully ${signatureAction === 'submit' ? 'signed and submitted' : 'endorsed and approved'}!`, 'success');
+                      setShowSignatureModal(false);
+                      fetchAllData();
+                      const updated = await res.json();
+                      setSelectedOffering(updated.offering);
+                    } else {
+                      const data = await res.json();
+                      showNotification(data.error || `Failed to ${signatureAction} portfolio`, 'error');
+                    }
+                  } catch (e) {
+                    showNotification('Network error processing signature.', 'error');
+                  }
+                }}
+                className="px-5 py-2 font-bold text-white bg-brand hover:bg-brand-hover rounded-xl transition shadow-md flex items-center gap-2 text-xs cursor-pointer shadow-indigo-600/20"
+              >
+                <Check className="w-4 h-4" /> Confirm & {signatureAction === 'submit' ? 'Submit Portfolio' : 'Approve & Seal'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Floating Bottom Action Bar for Selective Export & Print */}
+      {selectedDocIdsForBatch.size > 0 && selectedOffering && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 bg-slate-900/95 dark:bg-slate-950/95 text-white border border-slate-700/80 shadow-2xl rounded-2xl px-5 py-3.5 flex flex-wrap items-center gap-4 backdrop-blur-md animate-slide-up">
+          <div className="flex items-center gap-2">
+            <span className="w-7 h-7 rounded-full bg-indigo-600 text-white font-mono font-bold text-xs flex items-center justify-center shadow-xs">
+              {selectedDocIdsForBatch.size}
+            </span>
+            <span className="text-xs font-semibold">
+              {selectedDocIdsForBatch.size} artifact{selectedDocIdsForBatch.size > 1 ? 's' : ''} selected
+            </span>
+          </div>
+
+          <div className="hidden sm:block h-5 w-px bg-slate-700"></div>
+
+          <div className="flex items-center gap-2.5">
+            <button
+              onClick={handleBatchSelectiveExport}
+              disabled={isExportingSelective}
+              className="bg-indigo-600 hover:bg-indigo-500 text-white px-3.5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition shadow-sm cursor-pointer disabled:opacity-50"
+            >
+              {isExportingSelective ? <Clock className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
+              <span>{isExportingSelective ? 'Exporting ZIP...' : 'Download Selected (ZIP)'}</span>
+            </button>
+
+            <button
+              onClick={() => setShowPrintManifestModal(true)}
+              className="bg-emerald-600 hover:bg-emerald-500 text-white px-3.5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition shadow-sm cursor-pointer"
+            >
+              <Printer className="w-3.5 h-3.5" />
+              <span>Print / PDF Manifest</span>
+            </button>
+
+            <button
+              onClick={() => setSelectedDocIdsForBatch(new Set())}
+              className="text-slate-400 hover:text-white text-xs font-semibold px-2 py-1 transition cursor-pointer"
+            >
+              Clear
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Batch Print / Transmittal Manifest Modal */}
+      {showPrintManifestModal && selectedOffering && (
+        <div role="dialog" aria-modal="true" aria-label="Print Portfolio Manifest Modal" className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/70 backdrop-blur-xs" onClick={() => setShowPrintManifestModal(false)}></div>
+          <div className="bg-surface text-primary border border-subtle shadow-2xl rounded-2xl max-w-3xl w-full max-h-[90vh] flex flex-col z-10 overflow-hidden">
+            
+            {/* Modal Header */}
+            <div className="px-6 py-4 border-b border-subtle flex items-center justify-between bg-surface shrink-0">
+              <div className="flex items-center gap-2">
+                <Printer className="w-5 h-5 text-brand" />
+                <h3 className="font-bold text-base text-primary">Consolidated Batch Print & Document Manifest</h3>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => window.print()}
+                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 transition shadow-sm cursor-pointer"
+                >
+                  <Printer className="w-4 h-4" /> Print / Save as PDF
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowPrintManifestModal(false)}
+                  className="p-2 text-quaternary hover:text-primary rounded-lg transition cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Printable Manifest Body */}
+            <div className="p-6 overflow-y-auto space-y-6 print:p-0 print:overflow-visible print-container">
+              {/* Institutional Header */}
+              <div className="border-b-2 border-primary/20 pb-4 text-center space-y-1">
+                <span className="text-xs font-bold tracking-widest text-quaternary uppercase font-mono">
+                  DEPARTMENT OF COMPUTER SCIENCE & ENGINEERING
+                </span>
+                <h2 className="text-xl font-extrabold text-primary tracking-tight">
+                  OFFICIAL COURSE PORTFOLIO TRANSMITTAL MANIFEST
+                </h2>
+                <p className="text-xs text-secondary font-mono">
+                  Continuous Quality Improvement (CQI) & Institutional Accreditation Documentation
+                </p>
+              </div>
+
+              {/* Course & Instructor Info Grid */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-background p-4 rounded-xl border border-subtle text-xs">
+                <div>
+                  <span className="text-xs uppercase font-bold text-quaternary font-mono block">Course Code</span>
+                  <span className="font-bold text-primary">{selectedOffering.course?.code || 'N/A'}</span>
+                </div>
+                <div>
+                  <span className="text-xs uppercase font-bold text-quaternary font-mono block">Course Title</span>
+                  <span className="font-bold text-primary truncate block">{selectedOffering.course?.title || 'N/A'}</span>
+                </div>
+                <div>
+                  <span className="text-xs uppercase font-bold text-quaternary font-mono block">Academic Session</span>
+                  <span className="font-bold text-primary">{selectedOffering.term} {selectedOffering.academicYear} (Sec {selectedOffering.section})</span>
+                </div>
+                <div>
+                  <span className="text-xs uppercase font-bold text-quaternary font-mono block">Lead Instructor</span>
+                  <span className="font-bold text-primary">{selectedOffering.instructor?.name || 'Dr. Alice Smith'}</span>
+                </div>
+              </div>
+
+              {/* Selected Artifacts Table */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-quaternary font-mono">
+                    Selected Items for Transmittal & Review ({selectedDocIdsForBatch.size} Artifacts)
+                  </h4>
+                  <span className="text-xs text-tertiary font-mono">
+                    Generated: {new Date().toLocaleString()}
+                  </span>
+                </div>
+
+                <div className="border border-subtle rounded-xl overflow-hidden">
+                  <table className="w-full text-left text-xs">
+                    <thead className="bg-background text-quaternary uppercase font-mono text-xs border-b border-subtle">
+                      <tr>
+                        <th className="py-2.5 px-3">#</th>
+                        <th className="py-2.5 px-3">Requirement Item</th>
+                        <th className="py-2.5 px-3">Archived Filename</th>
+                        <th className="py-2.5 px-3">Version</th>
+                        <th className="py-2.5 px-3">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-subtle">
+                      {documents
+                        .filter(d => selectedDocIdsForBatch.has(d.id) && d.offeringId === selectedOffering.id && d.isCurrent)
+                        .map((doc, idx) => (
+                          <tr key={doc.id} className="hover:bg-background/50">
+                            <td className="py-2 px-3 font-mono text-tertiary font-bold">{idx + 1}</td>
+                            <td className="py-2 px-3 font-semibold text-primary">{getCategoryLabel(doc.category)}</td>
+                            <td className="py-2 px-3 font-mono text-secondary text-xs truncate max-w-[220px]">{doc.fileName}</td>
+                            <td className="py-2 px-3 font-mono text-tertiary">v{doc.version}</td>
+                            <td className="py-2 px-3">
+                              <span className={`inline-flex items-center gap-1 font-mono text-xs font-bold uppercase px-1.5 py-0.5 rounded ${
+                                doc.status === 'approved' ? 'bg-emerald-500/10 text-emerald-600' :
+                                doc.status === 'rejected' ? 'bg-rose-500/10 text-rose-600' :
+                                'bg-amber-500/10 text-amber-600'
+                              }`}>
+                                {doc.status === 'approved' ? 'Verified' : doc.status === 'rejected' ? 'Rejected' : 'Pending'}
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* Endorsement & Signature Badges */}
+              <div className="grid grid-cols-2 gap-4 pt-4 border-t border-subtle">
+                <div className="p-3 bg-background rounded-xl border border-subtle space-y-1">
+                  <span className="text-xs uppercase font-bold text-quaternary font-mono block">Instructor Verification</span>
+                  <p className="text-xs text-secondary font-semibold">{selectedOffering.instructor?.name || 'Lead Instructor'}</p>
+                  {selectedOffering.submitterSignatureUrl ? (
+                    <div className="bg-white rounded p-1 inline-block border border-slate-200 mt-1">
+                      <img src={selectedOffering.submitterSignatureUrl} alt="Signature" className="h-7 object-contain" />
+                    </div>
+                  ) : (
+                    <span className="text-xs text-tertiary font-mono italic">Signature Pending</span>
+                  )}
+                </div>
+
+                <div className="p-3 bg-background rounded-xl border border-subtle space-y-1">
+                  <span className="text-xs uppercase font-bold text-quaternary font-mono block">Department Head Endorsement</span>
+                  <p className="text-xs text-secondary font-semibold">Department Head / Chair</p>
+                  {selectedOffering.approverSignatureUrl ? (
+                    <div className="bg-white rounded p-1 inline-block border border-slate-200 mt-1">
+                      <img src={selectedOffering.approverSignatureUrl} alt="Signature" className="h-7 object-contain" />
+                    </div>
+                  ) : (
+                    <span className="text-xs text-tertiary font-mono italic">Endorsement Pending</span>
+                  )}
+                </div>
+              </div>
+
+            </div>
+
+            {/* Modal Footer */}
+            <div className="px-6 py-3 bg-background border-t border-subtle flex items-center justify-between shrink-0">
+              <button
+                type="button"
+                onClick={handleBatchSelectiveExport}
+                className="text-xs font-semibold text-brand hover:underline flex items-center gap-1.5 cursor-pointer"
+              >
+                <Download className="w-3.5 h-3.5" /> Download as ZIP instead
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowPrintManifestModal(false)}
+                className="px-4 py-1.5 bg-surface hover:bg-surface-hover text-secondary border border-subtle font-semibold rounded-xl text-xs transition cursor-pointer"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Core 8 CSE Accreditation Benchmark Matrix Modal */}
+      {showCore8HubModal && (
+        <div role="dialog" aria-modal="true" aria-label="Core 8 Hub Benchmark Matrix Modal" className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/70 backdrop-blur-xs" onClick={() => setShowCore8HubModal(false)}></div>
+          <div className="bg-surface text-primary border border-subtle shadow-2xl rounded-2xl max-w-3xl w-full max-h-[90vh] flex flex-col z-10 overflow-hidden">
+            
+            {/* Modal Header */}
+            <div className="px-6 py-4 border-b border-subtle flex items-center justify-between bg-surface shrink-0">
+              <div className="flex items-center gap-2.5">
+                <span className="w-9 h-9 rounded-xl bg-amber-500/20 text-amber-600 dark:text-amber-300 flex items-center justify-center font-bold">
+                  <Award className="w-5 h-5" />
+                </span>
+                <div>
+                  <h3 className="font-bold text-base text-primary">8 Core CSE Benchmark Courses</h3>
+                  <p className="text-xs text-tertiary">Foundational curriculum pillars evaluated for Outcome-Based Education (OBE)</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowCore8HubModal(false)}
+                className="p-2 text-quaternary hover:text-primary rounded-lg transition cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6 overflow-y-auto space-y-4">
+              <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-4 text-xs text-amber-900 dark:text-amber-200">
+                <p className="font-bold flex items-center gap-1.5 mb-1">
+                  <Star className="w-4 h-4 text-amber-500 fill-amber-500" /> Why are these 8 subjects prioritized?
+                </p>
+                <p className="opacity-90 leading-relaxed">
+                  Departmental heads and review coordinators systematically audit course files from these 8 foundational subjects to verify progression across all 12 Program Outcomes (PO1 to PO12), question paper cognitive levels (Bloom&apos;s Taxonomy), continuous quality improvement (CQI), and authentic representative student scripts.
+                </p>
+              </div>
+
+              <div className="border border-subtle rounded-xl overflow-hidden shadow-xs">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-background text-quaternary uppercase font-mono text-xs border-b border-subtle">
+                    <tr>
+                      <th className="py-2.5 px-3">#</th>
+                      <th className="py-2.5 px-3">Course Code</th>
+                      <th className="py-2.5 px-3">Official Title</th>
+                      <th className="py-2.5 px-3">Curriculum Pillar</th>
+                      <th className="py-2.5 px-3">Evaluation Focus</th>
+                      <th className="py-2.5 px-3 text-right">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-subtle font-sans">
+                    {CORE_8_CSE_BENCHMARKS.map((item, idx) => (
+                      <tr key={item.code} className="hover:bg-background/50">
+                        <td className="py-3 px-3 font-mono text-tertiary font-bold">{idx + 1}</td>
+                        <td className="py-3 px-3 font-mono font-bold text-brand">{item.code}</td>
+                        <td className="py-3 px-3 font-semibold text-primary">{item.title}</td>
+                        <td className="py-3 px-3">
+                          <span className="bg-surface-hover text-secondary px-2 py-0.5 rounded text-xs font-mono font-medium">
+                            {item.pillar}
+                          </span>
+                        </td>
+                        <td className="py-3 px-3 text-tertiary text-xs max-w-[220px]">{item.focus}</td>
+                        <td className="py-3 px-3 text-right">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setGlobalCourseCode(item.code);
+                              setBrowseMode('global');
+                              setShowCore8HubModal(false);
+                            }}
+                            className="text-xs font-bold text-brand hover:underline cursor-pointer"
+                          >
+                            Filter &rarr;
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="px-6 py-3 bg-background border-t border-subtle flex items-center justify-between shrink-0">
+              <span className="text-xs text-tertiary font-mono">
+                University Curriculum Standard Benchmark Map
+              </span>
+              <button
+                type="button"
+                onClick={() => setShowCore8HubModal(false)}
+                className="px-4 py-1.5 bg-surface hover:bg-surface-hover text-secondary border border-subtle font-semibold rounded-xl text-xs transition cursor-pointer"
+              >
+                Close Matrix
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+    </main>
       </div>
 
       {/* --- FORM MODALS --- */}
 
       {/* Modal 1: Register Course */}
       {showAddCourse && (
-        <div className="fixed inset-0 bg-inverse-surface-dark/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div role="dialog" aria-modal="true" aria-label="Add Course Modal" className="fixed inset-0 bg-inverse-surface-dark/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-surface border border-subtle w-full max-w-md rounded-2xl p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
             <div>
               <h3 className="text-sm font-bold text-primary uppercase font-mono tracking-wider">Register Syllabus Course</h3>
@@ -5159,7 +6606,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
 
             <form onSubmit={handleAddCourse} className="space-y-4">
               <div>
-                <label className="block text-[10px] font-bold text-tertiary uppercase font-mono mb-1">Course Code</label>
+                <label className="block text-xs font-bold text-tertiary uppercase font-mono mb-1">Course Code</label>
                 <input
                   type="text"
                   value={newCourseCode}
@@ -5170,7 +6617,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
               </div>
 
               <div>
-                <label className="block text-[10px] font-bold text-tertiary uppercase font-mono mb-1">Syllabus Title</label>
+                <label className="block text-xs font-bold text-tertiary uppercase font-mono mb-1">Syllabus Title</label>
                 <input
                   type="text"
                   value={newCourseTitle}
@@ -5181,7 +6628,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
               </div>
 
               <div>
-                <label className="block text-[10px] font-bold text-tertiary uppercase font-mono mb-1">Offering Department</label>
+                <label className="block text-xs font-bold text-tertiary uppercase font-mono mb-1">Offering Department</label>
                 <input
                   type="text"
                   value={newCourseDept}
@@ -5226,7 +6673,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
 
             <form onSubmit={handleAddOffering} className="space-y-4">
               <div>
-                <label className="block text-[10px] font-bold text-tertiary uppercase font-mono mb-1">Select Course</label>
+                <label className="block text-xs font-bold text-tertiary uppercase font-mono mb-1">Select Course</label>
                 <select
                   value={newOffCourseId}
                   onChange={(e) => setNewOffCourseId(e.target.value)}
@@ -5241,7 +6688,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-[10px] font-bold text-tertiary uppercase font-mono mb-1">Academic Year</label>
+                  <label className="block text-xs font-bold text-tertiary uppercase font-mono mb-1">Academic Year</label>
                   <input
                     type="number"
                     value={newOffYear}
@@ -5251,7 +6698,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                 </div>
 
                 <div>
-                  <label className="block text-[10px] font-bold text-tertiary uppercase font-mono mb-1">Term</label>
+                  <label className="block text-xs font-bold text-tertiary uppercase font-mono mb-1">Term</label>
                   <select
                     value={newOffTerm}
                     onChange={(e) => setNewOffTerm(e.target.value as Term)}
@@ -5266,7 +6713,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-[10px] font-bold text-tertiary uppercase font-mono mb-1">Section</label>
+                  <label className="block text-xs font-bold text-tertiary uppercase font-mono mb-1">Section</label>
                   <input
                     type="text"
                     value={newOffSection}
@@ -5277,7 +6724,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                 </div>
 
                 <div>
-                  <label className="block text-[10px] font-bold text-tertiary uppercase font-mono mb-1">Instructor</label>
+                  <label className="block text-xs font-bold text-tertiary uppercase font-mono mb-1">Instructor</label>
                   <select
                     value={newOffInstructorId}
                     onChange={(e) => setNewOffInstructorId(e.target.value)}
@@ -5296,13 +6743,13 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
               </div>
 
               <div>
-                <label className="block text-[10px] font-bold text-tertiary uppercase font-mono mb-1">Board Auditor (Optional)</label>
+                <label className="block text-xs font-bold text-tertiary uppercase font-mono mb-1">Board Auditor / Coordinator (Optional)</label>
                 <select
                   value={newOffAuditorId}
                   onChange={(e) => setNewOffAuditorId(e.target.value)}
                   className="w-full bg-background border border-subtle rounded-xl py-2 px-3 text-primary text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500"
                 >
-                  <option value="">-- Assign Board Auditor (Optional) --</option>
+                  <option value="">-- Assign Board Auditor / Coordinator (Optional) --</option>
                   {usersList
                     .filter(u => u.role === UserRole.AUDITOR)
                     .map(u => (
@@ -5346,7 +6793,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
 
             <form onSubmit={handleAddUser} className="space-y-4">
               <div>
-                <label className="block text-[10px] font-bold text-tertiary uppercase font-mono mb-1">Full Name</label>
+                <label className="block text-xs font-bold text-tertiary uppercase font-mono mb-1">Full Name</label>
                 <input
                   type="text"
                   value={newUserName}
@@ -5357,7 +6804,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
               </div>
 
               <div>
-                <label className="block text-[10px] font-bold text-tertiary uppercase font-mono mb-1">Email ID</label>
+                <label className="block text-xs font-bold text-tertiary uppercase font-mono mb-1">Email ID</label>
                 <input
                   type="email"
                   value={newUserEmail}
@@ -5369,7 +6816,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-[10px] font-bold text-tertiary uppercase font-mono mb-1">Role Clearance</label>
+                  <label className="block text-xs font-bold text-tertiary uppercase font-mono mb-1">Role Clearance</label>
                   <select
                     value={newUserRole}
                     onChange={(e) => setNewUserRole(e.target.value as UserRole)}
@@ -5377,13 +6824,13 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                   >
                     <option value={UserRole.INSTRUCTOR}>INSTRUCTOR</option>
                     <option value={UserRole.DEPT_HEAD}>DEPARTMENT HEAD</option>
-                    <option value={UserRole.AUDITOR}>BOARD AUDITOR</option>
+                    <option value={UserRole.AUDITOR}>BOARD AUDITOR / COORDINATOR</option>
                     <option value={UserRole.ADMIN}>SYSTEM ADMIN</option>
                   </select>
                 </div>
 
                 <div>
-                  <label className="block text-[10px] font-bold text-tertiary uppercase font-mono mb-1">Department</label>
+                  <label className="block text-xs font-bold text-tertiary uppercase font-mono mb-1">Department</label>
                   <input
                     type="text"
                     value={newUserDept}
@@ -5429,7 +6876,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
 
             <form onSubmit={handleAddCategorySlot} className="space-y-4">
               <div>
-                <label className="block text-[10px] font-bold text-tertiary uppercase font-mono mb-1">Slot Display Label</label>
+                <label className="block text-xs font-bold text-tertiary uppercase font-mono mb-1">Slot Display Label</label>
                 <input
                   type="text"
                   value={newCatLabel}
@@ -5441,7 +6888,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
               </div>
 
               <div>
-                <label className="block text-[10px] font-bold text-tertiary uppercase font-mono mb-1">Group / Section</label>
+                <label className="block text-xs font-bold text-tertiary uppercase font-mono mb-1">Group / Section</label>
                 <select
                   value={newCatGroup}
                   onChange={(e) => setNewCatGroup(e.target.value)}
@@ -5461,7 +6908,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
               <div className="flex items-center justify-between bg-surface-hover p-3 rounded-xl border border-subtle">
                 <div>
                   <span className="text-xs font-bold text-primary block">Mandatory Core Requirement</span>
-                  <span className="text-[10px] text-tertiary block">If enabled, this slot is required for 100% completion.</span>
+                  <span className="text-xs text-tertiary block">If enabled, this slot is required for 100% completion.</span>
                 </div>
                 <input
                   type="checkbox"
@@ -5505,7 +6952,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                 <div>
                   <div className="flex items-center gap-2">
                     <h3 className="text-base font-bold text-primary">Bulk Course File Ingestion</h3>
-                    <span className="bg-brand/15 text-brand-bold text-[10px] font-mono font-bold px-2 py-0.5 rounded-full flex items-center gap-1 border border-brand/30">
+                    <span className="bg-brand/15 text-brand-bold text-xs font-mono font-bold px-2 py-0.5 rounded-full flex items-center gap-1 border border-brand/30">
                       <Zap className="w-3 h-3 text-amber-500" /> Auto-Categorization Active
                     </span>
                   </div>
@@ -5603,7 +7050,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                 <p className="text-xs font-bold text-primary">
                   Drag & drop multiple course files here, or <span className="text-brand underline">browse your device</span>
                 </p>
-                <p className="text-[11px] text-tertiary mt-1 font-mono">
+                <p className="text-xs text-tertiary mt-1 font-mono">
                   Supported formats: PDF, Word (.docx), Excel (.xlsx) • Select 5, 10, or 20+ files at once
                 </p>
               </div>
@@ -5629,7 +7076,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                 <div className="flex items-center justify-between px-1">
                   <h4 className="text-xs font-bold text-secondary uppercase font-mono tracking-wider flex items-center gap-2">
                     <span>Processing Queue</span>
-                    <span className="bg-surface-hover border border-subtle px-2 py-0.5 rounded-full text-[10px] text-primary">
+                    <span className="bg-surface-hover border border-subtle px-2 py-0.5 rounded-full text-xs text-primary">
                       {bulkQueue.length} files
                     </span>
                   </h4>
@@ -5648,7 +7095,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                   <div className="text-center py-10 bg-background/40 border border-subtle rounded-2xl space-y-2">
                     <FileText className="w-10 h-10 text-quaternary mx-auto" />
                     <p className="text-xs font-bold text-secondary">No files in queue yet</p>
-                    <p className="text-[11px] text-tertiary max-w-sm mx-auto">
+                    <p className="text-xs text-tertiary max-w-sm mx-auto">
                       Drop files into the zone above or click "Browse Multi-Files" or "Load 5 Sample Files" to populate the auto-categorization queue.
                     </p>
                   </div>
@@ -5671,10 +7118,10 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                           <div className="min-w-0 flex-grow space-y-1">
                             <div className="flex items-center gap-2 flex-wrap">
                               <span className="text-xs font-bold text-primary truncate max-w-xs">{item.fileName}</span>
-                              <span className="text-[10px] text-tertiary font-mono">({item.fileSizeFormatted})</span>
+                              <span className="text-xs text-tertiary font-mono">({item.fileSizeFormatted})</span>
                               
                               {/* Confidence Badge */}
-                              <span className={`text-[9px] font-mono font-bold px-2 py-0.5 rounded-md flex items-center gap-1 ${
+                              <span className={`text-xs font-mono font-bold px-2 py-0.5 rounded-md flex items-center gap-1 ${
                                 item.confidence === 'high' ? 'bg-success-subtle text-success-bolder border border-success-subtle' :
                                 item.confidence === 'medium' ? 'bg-warning-subtle text-warning-bolder border border-warning-subtle' :
                                 'bg-surface-hover text-tertiary border border-subtle'
@@ -5685,7 +7132,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
 
                             {/* Status Message / Error */}
                             {item.status === 'error' && item.errorMessage && (
-                              <p className="text-[11px] text-error font-mono flex items-center gap-1 font-semibold">
+                              <p className="text-xs text-error font-mono flex items-center gap-1 font-semibold">
                                 <AlertCircle className="w-3 h-3 shrink-0" /> {item.errorMessage}
                               </p>
                             )}
@@ -5697,7 +7144,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                             )}
 
                             {item.status === 'completed' && (
-                              <p className="text-[10px] text-success-bold font-mono flex items-center gap-1">
+                              <p className="text-xs text-success-bold font-mono flex items-center gap-1">
                                 <CheckCircle className="w-3 h-3" /> Compiled and locked in course archive!
                               </p>
                             )}
@@ -5711,7 +7158,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                             disabled={isBulkProcessing || item.status === 'completed'}
                             value={item.offeringId}
                             onChange={(e) => updateBulkQueueItemOffering(item.id, e.target.value)}
-                            className="bg-background border border-subtle rounded-xl py-1.5 px-2.5 text-[11px] text-primary font-semibold focus:outline-none focus:ring-1 focus:ring-indigo-500 max-w-[150px] truncate"
+                            className="bg-background border border-subtle rounded-xl py-1.5 px-2.5 text-xs text-primary font-semibold focus:outline-none focus:ring-1 focus:ring-indigo-500 max-w-[150px] truncate"
                           >
                             {offerings.map(o => (
                               <option key={o.id} value={o.id}>
@@ -5725,7 +7172,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                             disabled={isBulkProcessing || item.status === 'completed'}
                             value={item.selectedCategory}
                             onChange={(e) => updateBulkQueueItemCategory(item.id, e.target.value as DocumentCategory)}
-                            className="bg-background border border-subtle rounded-xl py-1.5 px-2.5 text-[11px] text-primary font-semibold focus:outline-none focus:ring-1 focus:ring-indigo-500 max-w-[190px] truncate"
+                            className="bg-background border border-subtle rounded-xl py-1.5 px-2.5 text-xs text-primary font-semibold focus:outline-none focus:ring-1 focus:ring-indigo-500 max-w-[190px] truncate"
                           >
                             {categoriesList.filter(c => c.isActive !== false).map(cat => (
                               <option key={cat.id} value={cat.id}>
@@ -5831,7 +7278,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
             <form onSubmit={handleUploadDoc} className="space-y-4">
               <div className="flex flex-col sm:flex-row gap-4 items-end">
                 <div className="flex-grow w-full">
-                  <label className="block text-[10px] font-bold text-tertiary uppercase font-mono mb-1">Document Category ({categoriesList.filter(c => c.isActive !== false).length} slots active)</label>
+                  <label className="block text-xs font-bold text-tertiary uppercase font-mono mb-1">Document Category ({categoriesList.filter(c => c.isActive !== false).length} slots active)</label>
                   <select
                     value={uploadCategory}
                     onChange={(e) => setUploadCategory(e.target.value as DocumentCategory)}
@@ -5907,7 +7354,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                       </div>
                       <div>
                         <p className="text-xs font-bold text-primary-muted truncate max-w-[320px]">{selectedFile.name}</p>
-                        <p className="text-[10px] text-tertiary font-mono">{(selectedFile.size / 1024).toFixed(1)} KB</p>
+                        <p className="text-xs text-tertiary font-mono">{(selectedFile.size / 1024).toFixed(1)} KB</p>
                       </div>
                     </div>
                     <button
@@ -5925,7 +7372,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                   <label htmlFor="real-file-upload" className="block w-full h-full cursor-pointer">
                     <FileUp className="w-8 h-8 text-quaternary mx-auto mb-2 animate-bounce" />
                     <p className="text-xs font-bold text-secondary">Drag & drop files here, or <span className="text-brand underline">browse</span></p>
-                    <p className="text-[10px] text-quaternary mt-1 font-mono">PDF, DOCX, XLSX (Up to 10MB)</p>
+                    <p className="text-xs text-quaternary mt-1 font-mono">PDF, DOCX, XLSX (Up to 10MB)</p>
                   </label>
                 )}
               </div>
@@ -5935,9 +7382,9 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-1.5 text-secondary">
                     <Lock className="w-4 h-4 text-brand-muted shrink-0" />
-                    <span className="text-[10px] font-bold uppercase tracking-wider font-mono">Target Stored Filename</span>
+                    <span className="text-xs font-bold uppercase tracking-wider font-mono">Target Stored Filename</span>
                   </div>
-                  <span className="text-[9px] font-bold bg-brand-subtle text-brand-bold border border-brand-divider px-2 py-0.5 rounded uppercase font-mono">
+                  <span className="text-xs font-bold bg-brand-subtle text-brand-bold border border-brand-divider px-2 py-0.5 rounded uppercase font-mono">
                     Auto-Generated
                   </span>
                 </div>
@@ -5957,7 +7404,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                       title="Click to Copy Filename"
                     >
                       <span>{filename}</span>
-                      <span className="text-[9px] font-normal text-brand-muted select-none shrink-0">Click to copy</span>
+                      <span className="text-xs font-normal text-brand-muted select-none shrink-0">Click to copy</span>
                     </div>
                   );
                 })()}
@@ -5965,7 +7412,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                 {selectedFile && (() => {
                   const validation = validateFileType(uploadCategory, selectedFile);
                   return (
-                    <div className={`flex items-center gap-1.5 px-3 py-2 rounded-xl border text-[11px] font-semibold ${
+                    <div className={`flex items-center gap-1.5 px-3 py-2 rounded-xl border text-xs font-semibold ${
                       validation.isValid 
                         ? 'bg-success-subtle text-success-bolder border-success-subtle/60' 
                         : 'bg-error-subtle text-error-bolder border-error-subtle/60'
@@ -5989,14 +7436,14 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
               {!selectedFile && (
                 <div className="relative flex py-2 items-center">
                   <div className="flex-grow border-t border-divider"></div>
-                  <span className="flex-shrink mx-4 text-[9px] font-mono text-quaternary uppercase tracking-wider">Or Use Plain-Text payload</span>
+                  <span className="flex-shrink mx-4 text-xs font-mono text-quaternary uppercase tracking-wider">Or Use Plain-Text payload</span>
                   <div className="flex-grow border-t border-divider"></div>
                 </div>
               )}
 
               {!selectedFile && (
                 <div>
-                  <label className="block text-[10px] font-bold text-tertiary uppercase font-mono mb-1">Document Text Payload (Simulating PDF/Excel compilation)</label>
+                  <label className="block text-xs font-bold text-tertiary uppercase font-mono mb-1">Document Text Payload (Simulating PDF/Excel compilation)</label>
                   <textarea
                     value={uploadText}
                     onChange={(e) => setUploadText(e.target.value)}
@@ -6009,7 +7456,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
 
               {isUploading && (
                 <div className="space-y-1.5 py-1">
-                  <div className="flex items-center justify-between text-[10px] text-brand font-mono font-bold">
+                  <div className="flex items-center justify-between text-xs text-brand font-mono font-bold">
                     <span>TRANSMITTING TO CLOUDFLARE R2...</span>
                     <span>{uploadProgress}%</span>
                   </div>
@@ -6027,7 +7474,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
               )}
 
               <div className="flex justify-between items-center pt-2">
-                <span className="text-[10px] text-quaternary font-mono max-w-[280px]">
+                <span className="text-xs text-quaternary font-mono max-w-[280px]">
                   Standardized filename will be assigned upon submission.
                 </span>
                 
@@ -6068,7 +7515,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
 
       {/* Confirmation Dialog */}
       {confirmDialog.isOpen && (
-        <div className="fixed inset-0 bg-overlay backdrop-blur-sm z-[100] flex items-center justify-center p-4">
+        <div role="dialog" aria-modal="true" aria-label="Confirmation Dialog" className="fixed inset-0 bg-overlay backdrop-blur-sm z-[100] flex items-center justify-center p-4">
           <div className="bg-surface border border-subtle w-full max-w-sm rounded-2xl p-6 shadow-2xl space-y-5 animate-in fade-in zoom-in-95 duration-200">
             <div>
               <h3 className="text-lg font-bold text-primary">{confirmDialog.title}</h3>
@@ -6108,7 +7555,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                   const docOffering = offerings.find(o => o.id === showReviewDoc.offeringId);
                   const isSelfReview = docOffering && docOffering.instructorId === currentUser.id;
                   return isSelfReview ? (
-                    <span className="text-[10px] font-bold font-mono bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 px-2 py-0.5 rounded border border-indigo-500/20">
+                    <span className="text-xs font-bold font-mono bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 px-2 py-0.5 rounded border border-indigo-500/20">
                       Self-Review (Course Instructor)
                     </span>
                   ) : null;
@@ -6121,7 +7568,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
 
             <form onSubmit={handleReviewDoc} className="space-y-4">
               <div>
-                <label className="block text-[10px] font-bold text-tertiary uppercase font-mono mb-1.5">Verification Action</label>
+                <label className="block text-xs font-bold text-tertiary uppercase font-mono mb-1.5">Verification Action</label>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <button
                     type="button"
@@ -6150,7 +7597,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
               </div>
 
               <div>
-                <label className="block text-[10px] font-bold text-tertiary uppercase font-mono mb-1">Feedback/Review Comments</label>
+                <label className="block text-xs font-bold text-tertiary uppercase font-mono mb-1">Feedback/Review Comments</label>
                 <textarea
                   value={reviewFeedback}
                   onChange={(e) => setReviewFeedback(e.target.value)}
@@ -6221,7 +7668,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
         const isPrivilegedUser = currentUser.role === UserRole.ADMIN || currentUser.role === UserRole.DEPT_HEAD;
 
         return (
-          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fade-in">
+          <div role="dialog" aria-modal="true" aria-label="Bulk Upload Modal" className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fade-in">
             <div className="bg-surface border border-subtle rounded-2xl p-6 max-w-2xl w-full max-h-[90vh] flex flex-col shadow-2xl space-y-5 animate-scale-up">
               
               {/* Modal Header */}
@@ -6261,11 +7708,11 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
               {currentActiveDoc ? (
                 <div className="bg-background border border-subtle rounded-xl p-3 flex flex-wrap items-center justify-between gap-3 text-xs">
                   <div>
-                    <span className="text-[10px] text-quaternary uppercase font-mono block">Active Version</span>
+                    <span className="text-xs text-quaternary uppercase font-mono block">Active Version</span>
                     <span className="font-mono font-bold text-brand">v{currentActiveDoc.version}</span> - <span className="font-semibold text-secondary-muted">{currentActiveDoc.fileName}</span>
                   </div>
                   <div className="flex items-center gap-2">
-                    <span className="text-[10px] text-quaternary uppercase font-mono">Status:</span>
+                    <span className="text-xs text-quaternary uppercase font-mono">Status:</span>
                     {currentActiveDoc.status === 'approved' && (
                       <span className="inline-flex items-center gap-1 text-xs font-bold text-success-bold bg-success-subtle px-2 py-0.5 rounded font-mono">
                         <CheckCircle className="w-3.5 h-3.5 text-success" /> APPROVED
@@ -6296,7 +7743,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                   <div className="text-center py-10 bg-background rounded-xl border border-subtle">
                     <History className="w-8 h-8 text-quaternary mx-auto mb-2 opacity-50" />
                     <p className="text-xs font-bold text-tertiary">No version history records found.</p>
-                    <p className="text-[11px] text-quaternary mt-1">Upload a document to initialize version 1.</p>
+                    <p className="text-xs text-quaternary mt-1">Upload a document to initialize version 1.</p>
                   </div>
                 ) : (
                   categoryDocHistory.map((doc) => {
@@ -6319,7 +7766,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                                 v{doc.version}
                               </span>
                               {isCurrent && (
-                                <span className="bg-success-subtle text-success-bold text-[10px] font-bold px-2 py-0.5 rounded uppercase tracking-wider font-mono">
+                                <span className="bg-success-subtle text-success-bold text-xs font-bold px-2 py-0.5 rounded uppercase tracking-wider font-mono">
                                   Current Active Version
                                 </span>
                               )}
@@ -6328,7 +7775,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                               </span>
                             </div>
 
-                            <div className="flex items-center gap-3 text-[11px] text-tertiary font-sans pt-1 flex-wrap">
+                            <div className="flex items-center gap-3 text-xs text-tertiary font-sans pt-1 flex-wrap">
                               <span className="flex items-center gap-1">
                                 <User className="w-3 h-3 text-quaternary" /> Uploaded by <strong className="text-secondary-muted">{doc.uploadedBy}</strong>
                               </span>
@@ -6407,7 +7854,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                 <div>
                   <div className="flex items-center gap-2">
                     <span className="text-xs font-bold text-rose-600 uppercase font-mono tracking-wider">Faculty Course Notice</span>
-                    <span className="bg-rose-500/15 text-rose-600 dark:text-rose-400 font-mono text-[10px] font-bold px-2 py-0.5 rounded-full border border-rose-500/20">
+                    <span className="bg-rose-500/15 text-rose-600 dark:text-rose-400 font-mono text-xs font-bold px-2 py-0.5 rounded-full border border-rose-500/20">
                       {reminderModalData.missingCategories.length} Missing Document{reminderModalData.missingCategories.length === 1 ? '' : 's'}
                     </span>
                   </div>
@@ -6438,7 +7885,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                     <Calendar className="w-3.5 h-3.5 text-brand" /> Attach Submission Deadline (Optional):
                   </span>
                   {reminderModalData.deadline && (
-                    <span className="text-[11px] font-mono text-emerald-600 font-bold bg-emerald-500/10 px-2 py-0.5 rounded-md border border-emerald-500/20">
+                    <span className="text-xs font-mono text-emerald-600 font-bold bg-emerald-500/10 px-2 py-0.5 rounded-md border border-emerald-500/20">
                       ✓ Attached: {reminderModalData.deadline}
                     </span>
                   )}
@@ -6470,7 +7917,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                   </button>
 
                   <div className="flex items-center gap-1.5 ml-auto">
-                    <span className="text-[11px] text-tertiary">Custom:</span>
+                    <span className="text-xs text-tertiary">Custom:</span>
                     <input
                       type="date"
                       onChange={(e) => {
@@ -6491,7 +7938,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                       <button
                         type="button"
                         onClick={() => handleDeadlinePreset('clear')}
-                        className="text-[11px] text-rose-500 hover:text-rose-600 font-bold underline px-1 cursor-pointer"
+                        className="text-xs text-rose-500 hover:text-rose-600 font-bold underline px-1 cursor-pointer"
                         title="Remove deadline from notice"
                       >
                         Remove
@@ -6504,7 +7951,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
               {/* Editable Fields: Recipient & Subject */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-[10px] font-bold text-tertiary uppercase font-mono mb-1">Recipient Email</label>
+                  <label className="block text-xs font-bold text-tertiary uppercase font-mono mb-1">Recipient Email</label>
                   <input
                     type="email"
                     value={reminderModalData.recipient}
@@ -6515,7 +7962,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                 </div>
 
                 <div>
-                  <label className="block text-[10px] font-bold text-tertiary uppercase font-mono mb-1">Subject Line</label>
+                  <label className="block text-xs font-bold text-tertiary uppercase font-mono mb-1">Subject Line</label>
                   <input
                     type="text"
                     value={reminderModalData.subject}
@@ -6529,10 +7976,10 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
               {/* Editable Body Template */}
               <div>
                 <div className="flex items-center justify-between mb-1">
-                  <label className="block text-[10px] font-bold text-tertiary uppercase font-mono">
+                  <label className="block text-xs font-bold text-tertiary uppercase font-mono">
                     Email Body (Fully Editable)
                   </label>
-                  <span className="text-[10px] text-quaternary font-mono">
+                  <span className="text-xs text-quaternary font-mono">
                     {reminderModalData.body.length} chars
                   </span>
                 </div>
@@ -6547,13 +7994,13 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
 
               {/* Missing Items Summary Pills */}
               <div className="bg-rose-500/5 border border-rose-500/20 rounded-xl p-3 space-y-1.5">
-                <p className="text-[10px] font-bold text-rose-600 dark:text-rose-400 uppercase font-mono">
+                <p className="text-xs font-bold text-rose-600 dark:text-rose-400 uppercase font-mono">
                   Identified Missing Items Included in this Notice:
                 </p>
                 <div className="flex flex-wrap items-center gap-1.5">
                   {reminderModalData.missingCategories.map(cat => {
                     return (
-                      <span key={cat} className="text-[11px] font-medium bg-surface text-secondary-muted px-2 py-0.5 rounded-md border border-subtle font-sans">
+                      <span key={cat} className="text-xs font-medium bg-surface text-secondary-muted px-2 py-0.5 rounded-md border border-subtle font-sans">
                         • {getCategoryLabel(cat)}
                       </span>
                     );
@@ -6623,7 +8070,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
         const docOffering = offerings.find(o => o.id === previewDoc.offeringId) || selectedOffering;
 
         return (
-          <div className="fixed inset-0 bg-inverse-surface-dark/80 backdrop-blur-md z-50 flex items-center justify-center p-2 sm:p-4 animate-fade-in">
+          <div role="dialog" aria-modal="true" aria-label="Document Preview Modal" className="fixed inset-0 bg-inverse-surface-dark/80 backdrop-blur-md z-50 flex items-center justify-center p-2 sm:p-4 animate-fade-in">
             <div className={`bg-surface border border-subtle rounded-2xl shadow-2xl flex flex-col transition-all duration-200 overflow-hidden ${
               previewFullscreen ? 'w-full h-full max-w-none max-h-none rounded-none' : 'w-full max-w-5xl h-[88vh]'
             }`}>
@@ -6636,17 +8083,17 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                   <div className="min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="font-mono text-xs font-bold text-brand uppercase">{getCategoryLabel(previewDoc.category)}</span>
-                      <span className="text-[10px] font-mono text-quaternary bg-surface-hover px-2 py-0.5 rounded">v{previewDoc.version}</span>
+                      <span className="text-xs font-mono text-quaternary bg-surface-hover px-2 py-0.5 rounded">v{previewDoc.version}</span>
                       {previewDoc.status === 'approved' ? (
-                        <span className="inline-flex items-center gap-1 text-[10px] font-bold text-success-bold bg-success-subtle px-2 py-0.5 rounded uppercase font-mono">
+                        <span className="inline-flex items-center gap-1 text-xs font-bold text-success-bold bg-success-subtle px-2 py-0.5 rounded uppercase font-mono">
                           <CheckCircle className="w-3 h-3" /> Approved
                         </span>
                       ) : previewDoc.status === 'rejected' ? (
-                        <span className="inline-flex items-center gap-1 text-[10px] font-bold text-error-bold bg-error-subtle px-2 py-0.5 rounded uppercase font-mono">
+                        <span className="inline-flex items-center gap-1 text-xs font-bold text-error-bold bg-error-subtle px-2 py-0.5 rounded uppercase font-mono">
                           <XCircle className="w-3 h-3" /> Rejected
                         </span>
                       ) : (
-                        <span className="inline-flex items-center gap-1 text-[10px] font-bold text-warning-bold bg-warning-subtle px-2 py-0.5 rounded uppercase font-mono">
+                        <span className="inline-flex items-center gap-1 text-xs font-bold text-warning-bold bg-warning-subtle px-2 py-0.5 rounded uppercase font-mono">
                           <Clock className="w-3 h-3" /> Pending Review
                         </span>
                       )}
@@ -6734,7 +8181,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                       {isOffice ? <FileSpreadsheet className="w-8 h-8" /> : <FileText className="w-8 h-8" />}
                     </div>
                     <div>
-                      <span className="text-[10px] font-mono font-bold bg-brand/10 text-brand px-2.5 py-1 rounded-lg uppercase">
+                      <span className="text-xs font-mono font-bold bg-brand/10 text-brand px-2.5 py-1 rounded-lg uppercase">
                         {ext.toUpperCase()} File Format
                       </span>
                       <h4 className="text-base font-bold text-primary mt-2">{previewDoc.fileName}</h4>
@@ -6789,7 +8236,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
 
       {/* Modal: In-App Role User Manual & SOP Guide */}
       {showRoleManualModal && (
-        <div className="fixed inset-0 bg-inverse-surface-dark/70 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in">
+        <div role="dialog" aria-modal="true" aria-label="Role Operating Manual Modal" className="fixed inset-0 bg-inverse-surface-dark/70 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in">
           <div className="bg-surface border border-subtle rounded-2xl w-full max-w-3xl max-h-[90vh] shadow-2xl flex flex-col overflow-hidden animate-scale-up">
             {/* Modal Header */}
             <div className="bg-background px-6 py-4 border-b border-subtle flex items-center justify-between shrink-0">
@@ -6798,7 +8245,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                   <BookOpen className="w-5 h-5" />
                 </div>
                 <div>
-                  <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-brand">Institutional SOP</span>
+                  <span className="text-xs font-mono font-bold uppercase tracking-wider text-brand">Institutional SOP</span>
                   <h3 className="text-base font-bold text-primary">Role Operating Manual & User Guide</h3>
                 </div>
               </div>
@@ -6814,7 +8261,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
 
             {/* Role Switcher Tabs */}
             <div className="px-6 py-3 border-b border-subtle bg-slate-50/50 dark:bg-slate-900/40 flex flex-wrap items-center gap-2 shrink-0">
-              <span className="text-xs font-bold text-tertiary mr-1 font-mono uppercase text-[10px]">Select Role:</span>
+              <span className="text-xs font-bold text-tertiary mr-1 font-mono uppercase text-xs">Select Role:</span>
               <button
                 type="button"
                 onClick={() => setManualSelectedRole(UserRole.INSTRUCTOR)}
@@ -6827,7 +8274,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                 <User className="w-3.5 h-3.5" />
                 <span>Faculty / Instructor</span>
                 {currentUser?.role === UserRole.INSTRUCTOR && (
-                  <span className="text-[9px] bg-white/20 px-1.5 py-0.2 rounded-full font-mono">You</span>
+                  <span className="text-xs bg-white/20 px-1.5 py-0.2 rounded-full font-mono">You</span>
                 )}
               </button>
 
@@ -6843,7 +8290,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                 <Shield className="w-3.5 h-3.5" />
                 <span>Department Head</span>
                 {currentUser?.role === UserRole.DEPT_HEAD && (
-                  <span className="text-[9px] bg-white/20 px-1.5 py-0.2 rounded-full font-mono">You</span>
+                  <span className="text-xs bg-white/20 px-1.5 py-0.2 rounded-full font-mono">You</span>
                 )}
               </button>
 
@@ -6859,7 +8306,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                 <Settings className="w-3.5 h-3.5" />
                 <span>System Admin</span>
                 {currentUser?.role === UserRole.ADMIN && (
-                  <span className="text-[9px] bg-white/20 px-1.5 py-0.2 rounded-full font-mono">You</span>
+                  <span className="text-xs bg-white/20 px-1.5 py-0.2 rounded-full font-mono">You</span>
                 )}
               </button>
 
@@ -6873,9 +8320,9 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                 }`}
               >
                 <CheckCircle className="w-3.5 h-3.5" />
-                <span>Board Auditor</span>
+                <span>Board Auditor / Coordinator</span>
                 {currentUser?.role === UserRole.AUDITOR && (
-                  <span className="text-[9px] bg-white/20 px-1.5 py-0.2 rounded-full font-mono">You</span>
+                  <span className="text-xs bg-white/20 px-1.5 py-0.2 rounded-full font-mono">You</span>
                 )}
               </button>
             </div>
@@ -6997,7 +8444,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                       <div className="bg-background rounded-xl p-4 border border-subtle space-y-1.5">
                         <span className="text-xs font-bold text-purple-600 dark:text-purple-400 font-mono">1. User & Role Management</span>
                         <p className="text-xs text-tertiary">
-                          Navigate to <strong>User Directory</strong> to approve registered faculty, promote users to Department Heads or Auditors, and assign department scopes.
+                          Navigate to <strong>User Directory</strong> to approve registered faculty, promote users to Department Heads or Auditors/Coordinators, and assign department scopes.
                         </p>
                       </div>
 
@@ -7031,7 +8478,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                   <div className="bg-emerald-500/5 border border-emerald-500/20 rounded-2xl p-4 flex items-start gap-3">
                     <CheckCircle className="w-5 h-5 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
                     <div>
-                      <h4 className="text-sm font-bold text-primary">Board Auditor / Evaluator Mission</h4>
+                      <h4 className="text-sm font-bold text-primary">Board Auditor / Coordinator Mission</h4>
                       <p className="text-xs text-tertiary mt-0.5">
                         Conduct independent, read-only accreditation inspections to verify outcome attainments (CO/PO), assessment quality, and evidence compliance.
                       </p>
@@ -7059,7 +8506,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                       <div className="bg-background rounded-xl p-4 border border-subtle space-y-1.5">
                         <span className="text-xs font-bold text-emerald-600 dark:text-indigo-400 font-mono">3. OBE CQI Scrutiny</span>
                         <p className="text-xs text-tertiary">
-                          Verify Continuous Quality Improvement (CQI) reports and outcome attainment spreadsheets for BAETE/ABET compliance.
+                          Verify Continuous Quality Improvement (CQI) reports and outcome attainment spreadsheets for program outcome compliance.
                         </p>
                       </div>
 

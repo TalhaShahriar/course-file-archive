@@ -12,6 +12,7 @@ import fs from 'fs';
 import crypto from 'crypto';
 import multer from 'multer';
 import { ZipArchive } from 'archiver';
+import { PassThrough } from 'stream';
 
 import { 
   User, 
@@ -23,7 +24,9 @@ import {
   Term, 
   DocumentCategory,
   CategoryConfig,
-  CORE_16_CATEGORIES
+  CORE_16_CATEGORIES,
+  DOCUMENT_CATEGORIES,
+  AppNotification
 } from './src/types.js';
 
 import {
@@ -37,6 +40,7 @@ import {
   dbGetOfferings,
   dbCreateOffering,
   dbUpdateOfferingAuditor,
+  dbUpdateOfferingStatus,
   dbGetDocuments,
   dbCreateDocument,
   dbUpdateDocument, dbDeleteDocument,
@@ -50,7 +54,12 @@ import {
   dbGetTrashDocuments,
   dbRestoreDocument,
   dbPurgeDocument,
-  dbGetNextDocumentVersion
+  dbGetNextDocumentVersion,
+  dbGetNotifications,
+  dbCreateNotification,
+  dbMarkNotificationRead,
+  dbMarkAllNotificationsRead,
+  dbDeleteNotification
 } from './db.js';
 
 import { uploadFile, getFile, generateUploadUrl, generateDownloadUrl, isR2Configured, deleteFile } from './storage.js';
@@ -529,7 +538,431 @@ app.put('/api/offerings/:offeringId/auditor', async (req: Request, res: Response
     details,
   });
 
+  if (auditorId) {
+    const courses = await dbGetCourses();
+    const course = courses.find(c => c.id === updatedOffering.courseId);
+    await sendNotification(
+      auditorId,
+      'Assigned as Board Auditor',
+      `You were assigned as Board Auditor / Coordinator for ${course ? course.code : 'Course Offering'} (Sec ${updatedOffering.section}, ${updatedOffering.term} ${updatedOffering.academicYear}).`,
+      'info',
+      offeringId
+    );
+  }
+
   res.json({ offering: updatedOffering });
+});
+
+async function sendNotification(
+  userId: string,
+  title: string,
+  message: string,
+  type: 'info' | 'success' | 'warning' | 'action_required',
+  linkOfferingId?: string
+) {
+  try {
+    const notif: AppNotification = {
+      id: `notif_${Date.now()}_${crypto.randomUUID().substring(0, 6)}`,
+      userId,
+      title,
+      message,
+      type,
+      linkOfferingId,
+      isRead: false,
+      createdAt: new Date().toISOString()
+    };
+    await dbCreateNotification(notif);
+  } catch (err) {
+    console.error('[Notification Dispatch Error]', err);
+  }
+}
+
+// Notification API Endpoints
+app.get('/api/notifications', async (req: Request, res: Response) => {
+  const currentUser = await getSessionUser(req);
+  if (!currentUser) return res.status(401).json({ error: 'Unauthorized' });
+
+  const notifications = await dbGetNotifications(currentUser.id);
+  const unreadCount = notifications.filter(n => !n.isRead).length;
+
+  res.json({ notifications, unreadCount });
+});
+
+app.put('/api/notifications/:id/read', async (req: Request, res: Response) => {
+  const currentUser = await getSessionUser(req);
+  if (!currentUser) return res.status(401).json({ error: 'Unauthorized' });
+
+  const { id } = req.params;
+  await dbMarkNotificationRead(id);
+  res.json({ success: true });
+});
+
+app.put('/api/notifications/read-all', async (req: Request, res: Response) => {
+  const currentUser = await getSessionUser(req);
+  if (!currentUser) return res.status(401).json({ error: 'Unauthorized' });
+
+  await dbMarkAllNotificationsRead(currentUser.id);
+  res.json({ success: true });
+});
+
+app.delete('/api/notifications/:id', async (req: Request, res: Response) => {
+  const currentUser = await getSessionUser(req);
+  if (!currentUser) return res.status(401).json({ error: 'Unauthorized' });
+
+  const { id } = req.params;
+  await dbDeleteNotification(id);
+  res.json({ success: true });
+});
+
+// Digital Signature & Workflow API
+app.put('/api/offerings/:offeringId/submit', async (req: Request, res: Response) => {
+  const currentUser = await getSessionUser(req);
+  if (!currentUser) return res.status(401).json({ error: 'Unauthorized' });
+
+  const { offeringId } = req.params;
+  const { signatureUrl } = req.body;
+  
+  if (!signatureUrl) {
+    return res.status(400).json({ error: 'Signature is required' });
+  }
+
+  const updatedOffering = await dbUpdateOfferingStatus(offeringId, {
+    submissionStatus: 'submitted',
+    submittedAt: new Date().toISOString(),
+    submitterSignatureUrl: signatureUrl
+  });
+
+  if (!updatedOffering) {
+    return res.status(404).json({ error: 'Offering not found' });
+  }
+
+  await dbCreateAuditLog({
+    id: `log_${Date.now()}`,
+    action: 'SUBMIT_PORTFOLIO',
+    actorId: currentUser.id,
+    actorName: currentUser.name,
+    actorEmail: currentUser.email,
+    timestamp: new Date().toISOString(),
+    details: `Instructor submitted course portfolio for review`,
+  });
+
+  // Notify Dept Heads & Admins of submitted course file
+  const courses = await dbGetCourses();
+  const course = courses.find(c => c.id === updatedOffering.courseId);
+  const users = await dbGetUsers();
+  const deptHeadsAndAdmins = users.filter(u => u.role === UserRole.DEPT_HEAD || u.role === UserRole.ADMIN);
+  for (const reviewer of deptHeadsAndAdmins) {
+    if (reviewer.id !== currentUser.id) {
+      await sendNotification(
+        reviewer.id,
+        'Course Portfolio Submitted for Review',
+        `${currentUser.name} submitted the 16-slot course portfolio for ${course ? course.code : 'Course'} (Sec ${updatedOffering.section}, ${updatedOffering.term} ${updatedOffering.academicYear}) for endorsement.`,
+        'action_required',
+        offeringId
+      );
+    }
+  }
+
+  res.json({ offering: updatedOffering });
+});
+
+app.put('/api/offerings/:offeringId/approve', async (req: Request, res: Response) => {
+  const currentUser = await getSessionUser(req);
+  if (!currentUser || currentUser.role !== UserRole.DEPT_HEAD && currentUser.role !== UserRole.ADMIN) {
+    return res.status(403).json({ error: 'Unauthorized: Dept Head or Admin only' });
+  }
+
+  const { offeringId } = req.params;
+  const { signatureUrl } = req.body;
+  
+  if (!signatureUrl) {
+    return res.status(400).json({ error: 'Signature is required' });
+  }
+
+  const updatedOffering = await dbUpdateOfferingStatus(offeringId, {
+    submissionStatus: 'approved',
+    approvedAt: new Date().toISOString(),
+    approverSignatureUrl: signatureUrl
+  });
+
+  if (!updatedOffering) {
+    return res.status(404).json({ error: 'Offering not found' });
+  }
+
+  await dbCreateAuditLog({
+    id: `log_${Date.now()}`,
+    action: 'APPROVE_PORTFOLIO',
+    actorId: currentUser.id,
+    actorName: currentUser.name,
+    actorEmail: currentUser.email,
+    timestamp: new Date().toISOString(),
+    details: `Department Head approved course portfolio`,
+  });
+
+  // Notify Instructor and Auditor of approval
+  const courses = await dbGetCourses();
+  const course = courses.find(c => c.id === updatedOffering.courseId);
+  if (updatedOffering.instructorId) {
+    await sendNotification(
+      updatedOffering.instructorId,
+      '🎉 Course Portfolio Endorsed & Approved',
+      `Your course file for ${course ? course.code : 'Course'} (Sec ${updatedOffering.section}) was officially endorsed and sealed by ${currentUser.name}.`,
+      'success',
+      offeringId
+    );
+  }
+  if (updatedOffering.auditorId) {
+    await sendNotification(
+      updatedOffering.auditorId,
+      'Course File Sealed for Inspection',
+      `${course ? course.code : 'Course'} (Sec ${updatedOffering.section}) is now endorsed and ready for accreditation review.`,
+      'info',
+      offeringId
+    );
+  }
+
+  res.json({ offering: updatedOffering });
+});
+
+app.put('/api/offerings/:offeringId/reject', async (req: Request, res: Response) => {
+  const currentUser = await getSessionUser(req);
+  if (!currentUser || currentUser.role !== UserRole.DEPT_HEAD && currentUser.role !== UserRole.ADMIN) {
+    return res.status(403).json({ error: 'Unauthorized' });
+  }
+
+  const { offeringId } = req.params;
+
+  const updatedOffering = await dbUpdateOfferingStatus(offeringId, {
+    submissionStatus: 'rejected',
+    approvedAt: undefined,
+    approverSignatureUrl: undefined
+  });
+
+  if (!updatedOffering) {
+    return res.status(404).json({ error: 'Offering not found' });
+  }
+
+  await dbCreateAuditLog({
+    id: `log_${Date.now()}`,
+    action: 'REJECT_PORTFOLIO',
+    actorId: currentUser.id,
+    actorName: currentUser.name,
+    actorEmail: currentUser.email,
+    timestamp: new Date().toISOString(),
+    details: `Department Head rejected course portfolio and requested revisions`,
+  });
+
+  // Notify Instructor of rejection
+  const courses = await dbGetCourses();
+  const course = courses.find(c => c.id === updatedOffering.courseId);
+  if (updatedOffering.instructorId) {
+    await sendNotification(
+      updatedOffering.instructorId,
+      '⚠️ Course Portfolio Revisions Requested',
+      `${currentUser.name} requested changes on your course file for ${course ? course.code : 'Course'} (Sec ${updatedOffering.section}). Please update the necessary documents.`,
+      'warning',
+      offeringId
+    );
+  }
+
+  res.json({ offering: updatedOffering });
+});
+
+// Helper to generate sample compliant PDF buffers
+function createSamplePdfBuffer(
+  courseCode: string,
+  courseTitle: string,
+  categoryLabel: string,
+  categoryNumber: string,
+  term: string,
+  academicYear: number,
+  section: string,
+  instructorName: string
+): Buffer {
+  const safeTitle = `${courseCode}: ${courseTitle}`.replace(/[()\\\\]/g, '');
+  const safeSub = `Session: ${term} ${academicYear} | Section: ${section} | Instructor: ${instructorName}`.replace(/[()\\\\]/g, '');
+  const safeCat = `Requirement Item ${categoryNumber || ''}: ${categoryLabel}`.replace(/[()\\\\]/g, '');
+  const dateStr = new Date().toUTCString();
+
+  const streamContent = [
+    'BT',
+    '/F1 18 Tf',
+    '50 730 Td',
+    `(${safeTitle}) Tj`,
+    '/F1 11 Tf',
+    '0 -22 Td',
+    '(DEPARTMENT OF COMPUTER SCIENCE & ENGINEERING - OFFICIAL COURSE FILE ARCHIVE) Tj',
+    '0 -18 Td',
+    `(${safeSub}) Tj`,
+    '0 -30 Td',
+    '/F1 14 Tf',
+    `(${safeCat}) Tj`,
+    '/F1 10 Tf',
+    '0 -25 Td',
+    '([AUTHENTIC SAMPLE ACADEMIC ARTIFACT FOR ACCREDITATION & OBE REVIEW]) Tj',
+    '0 -18 Td',
+    '(Status: Compiled & Verified by Faculty for BAETE / ABET Institutional Portfolio) Tj',
+    '0 -18 Td',
+    `([System Generated Archive Specimen - Stamped ${dateStr}]) Tj`,
+    '0 -35 Td',
+    '/F1 11 Tf',
+    '(1. Document Purpose & Accreditation Compliance:) Tj',
+    '/F1 10 Tf',
+    '0 -18 Td',
+    '(This official record constitutes verified evidence satisfying departmental OBE criteria.) Tj',
+    '0 -16 Td',
+    '(All Course Learning Outcomes (COs) and Program Outcomes (POs) are aligned accordingly.) Tj',
+    '0 -28 Td',
+    '/F1 11 Tf',
+    '(2. Verification & Integrity Checklist:) Tj',
+    '/F1 10 Tf',
+    '0 -18 Td',
+    '([x] Syllabus and Blooms Taxonomy Assessment Rubrics Verified) Tj',
+    '0 -16 Td',
+    '([x] Continuous Quality Improvement (CQI) Benchmarking Integrated) Tj',
+    '0 -16 Td',
+    '([x] Representative Student Performance Samples Evaluated) Tj',
+    'ET'
+  ].join('\n');
+
+  const streamLength = Buffer.byteLength(streamContent);
+  let body = '%PDF-1.4\n';
+  const offsets: number[] = [0];
+
+  function addObj(content: string) {
+    offsets.push(Buffer.byteLength(body));
+    body += content + '\n';
+  }
+
+  addObj('1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj');
+  addObj('2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj');
+  addObj('3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>\nendobj');
+  addObj(`4 0 obj\n<< /Length ${streamLength} >>\nstream\n${streamContent}\nendstream\nendobj`);
+  addObj('5 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj');
+
+  const startXref = Buffer.byteLength(body);
+  body += `xref\n0 ${offsets.length}\n`;
+  body += '0000000000 65535 f \n';
+  for (let i = 1; i < offsets.length; i++) {
+    body += String(offsets[i]).padStart(10, '0') + ' 00000 n \n';
+  }
+  body += `trailer\n<< /Size ${offsets.length} /Root 1 0 R >>\nstartxref\n${startXref}\n%%EOF`;
+  return Buffer.from(body);
+}
+
+// Helper to generate sample valid XLSX buffer
+async function createSampleXlsxBuffer(
+  courseCode: string,
+  courseTitle: string,
+  term: string,
+  academicYear: number,
+  section: string
+): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    const archive = new ZipArchive({ zlib: { level: 6 } });
+    const passthrough = new PassThrough();
+    const chunks: Buffer[] = [];
+    passthrough.on('data', (chunk: Buffer) => chunks.push(chunk));
+    passthrough.on('end', () => resolve(Buffer.concat(chunks)));
+    passthrough.on('error', reject);
+    archive.pipe(passthrough);
+
+    const sheetContent = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <sheetData>
+    <row r="1"><c r="A1" t="inlineStr"><is><t>${courseCode}: ${courseTitle} - OBE CQI Excel Sheet</t></is></c></row>
+    <row r="2"><c r="A2" t="inlineStr"><is><t>Academic Session: ${term} ${academicYear} - Section ${section}</t></is></c></row>
+    <row r="3"><c r="A3" t="inlineStr"><is><t>CO1: 88.5% | CO2: 82.1% | CO3: 79.4% | PO Attainment: Compliant</t></is></c></row>
+  </sheetData>
+</worksheet>`;
+
+    archive.append('<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="xml" ContentType="application/xml"/><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/></Types>', { name: '[Content_Types].xml' });
+    archive.append('<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>', { name: '_rels/.rels' });
+    archive.append('<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheets><sheet name="OBE Assessment" sheetId="1" r:id="rId1" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"/></sheets></workbook>', { name: 'xl/workbook.xml' });
+    archive.append(sheetContent, { name: 'xl/worksheets/sheet1.xml' });
+    archive.append('<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>', { name: 'xl/_rels/workbook.xml.rels' });
+
+    archive.finalize();
+  });
+}
+
+// Rapid Demo Seeder Endpoint: Auto-Populate all 16 Document Slots & Sub-slots
+app.post('/api/offerings/:offeringId/populate-samples', async (req: Request, res: Response) => {
+  const currentUser = await getSessionUser(req);
+  if (!currentUser) return res.status(401).json({ error: 'Unauthorized: Please log in' });
+
+  const { offeringId } = req.params;
+  const offerings = await dbGetOfferings();
+  const offering = offerings.find(o => o.id === offeringId);
+  if (!offering) return res.status(404).json({ error: 'Course offering not found' });
+
+  const courses = await dbGetCourses();
+  const course = courses.find(c => c.id === offering.courseId);
+  if (!course) return res.status(404).json({ error: 'Course relation not found' });
+
+  const users = await dbGetUsers();
+  const instructor = users.find(u => u.id === offering.instructorId) || currentUser;
+
+  const allDocs = await dbGetDocuments();
+  const existingDocs = allDocs.filter(d => d.offeringId === offeringId && !d.isDeleted && d.isCurrent);
+
+  const missingCategories = DOCUMENT_CATEGORIES.filter(cat => !existingDocs.some(d => d.category === cat.value));
+
+  const creationPromises = missingCategories.map(async (cat) => {
+    const isXlsx = cat.value === 'obe_excel';
+    const extension = isXlsx ? 'xlsx' : 'pdf';
+    const mimeType = isXlsx ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' : 'application/pdf';
+
+    const fileBuffer = isXlsx 
+      ? await createSampleXlsxBuffer(course.code, course.title, String(offering.term), offering.academicYear, offering.section)
+      : createSamplePdfBuffer(course.code, course.title, cat.label, cat.number || '', String(offering.term), offering.academicYear, offering.section, instructor.name);
+
+    const fileName = generateStoredFilenameBackend(offering, course, cat.value, extension);
+    const storagePathKey = `course-archive/${offering.academicYear}/${offering.term}/${course.code}/${fileName}`;
+    const storagePath = await uploadFile(storagePathKey, fileBuffer, mimeType);
+
+    const docUniqueId = `doc_${Date.now()}_${crypto.randomUUID().substring(0, 8)}`;
+    const newDoc: Document = {
+      id: docUniqueId,
+      offeringId,
+      category: cat.value as DocumentCategory,
+      version: 1,
+      isCurrent: true,
+      fileName,
+      fileHash: crypto.createHash('sha256').update(fileBuffer).digest('hex'),
+      uploadedBy: currentUser.email,
+      uploadedAt: new Date().toISOString(),
+      storagePath,
+      status: 'pending_review',
+    };
+
+    await dbCreateDocument(newDoc);
+    return newDoc;
+  });
+
+  const createdDocs = await Promise.all(creationPromises);
+  const createdCount = createdDocs.length;
+
+  await dbCreateAuditLog({
+    id: `log_${Date.now()}`,
+    action: 'POPULATE_SAMPLE_FILES',
+    actorId: currentUser.id,
+    actorName: currentUser.name,
+    actorEmail: currentUser.email,
+    timestamp: new Date().toISOString(),
+    details: `Auto-populated ${createdCount} official sample documents & sub-slots for ${course.code} (Sec ${offering.section}, ${offering.term} ${offering.academicYear}) for fast demonstration.`,
+  });
+
+  const refreshedDocs = await dbGetDocuments();
+  const refreshedOfferings = await dbGetOfferings();
+  const refreshedOffering = refreshedOfferings.find(o => o.id === offeringId);
+
+  res.json({
+    success: true,
+    count: createdCount,
+    offering: refreshedOffering,
+    documents: refreshedDocs.filter(d => d.offeringId === offeringId && d.isCurrent)
+  });
 });
 
 // Categories API (Dynamic Slots Management)
@@ -1521,6 +1954,26 @@ app.post('/api/documents/:id/status', async (req: Request, res: Response) => {
     details,
   });
 
+  if (offering && offering.instructorId) {
+    if (status === 'rejected') {
+      await sendNotification(
+        offering.instructorId,
+        'Revision Requested on Document',
+        `${currentUser.name} requested changes on "${updatedDoc.fileName}" in ${courseCode}: "${feedback || 'Please review and re-upload.'}"`,
+        'warning',
+        offering.id
+      );
+    } else if (status === 'approved') {
+      await sendNotification(
+        offering.instructorId,
+        'Document Approved',
+        `${currentUser.name} verified and approved "${updatedDoc.fileName}" in ${courseCode}.`,
+        'success',
+        offering.id
+      );
+    }
+  }
+
   res.json({
     document: {
       ...updatedDoc,
@@ -1620,6 +2073,96 @@ app.get('/api/offerings/:id/export-package', exportLimiter, async (req: Request,
     actorEmail: currentUser.email,
     timestamp,
     details,
+  });
+});
+
+// Selective Batch Export Endpoint
+app.post('/api/offerings/:id/selective-export', exportLimiter, async (req: Request, res: Response) => {
+  const currentUser = await getSessionUser(req);
+  if (!currentUser) {
+    return res.status(401).json({ error: 'Authentication required' });
+  }
+
+  const { id } = req.params;
+  const { documentIds } = req.body;
+
+  if (!Array.isArray(documentIds) || documentIds.length === 0) {
+    return res.status(400).json({ error: 'No documents selected for export' });
+  }
+
+  const offerings = await dbGetOfferings();
+  const offering = offerings.find(o => o.id === id);
+  if (!offering) {
+    return res.status(404).json({ error: 'Course Offering not found' });
+  }
+
+  const courses = await dbGetCourses();
+  const course = courses.find(c => c.id === offering.courseId);
+  if (!course) {
+    return res.status(404).json({ error: 'Associated Course not found' });
+  }
+
+  const allDocs = await dbGetDocuments();
+  const selectedDocs = allDocs.filter(d => documentIds.includes(d.id) && d.offeringId === id && !d.isDeleted);
+
+  if (selectedDocs.length === 0) {
+    return res.status(404).json({ error: 'None of the selected documents exist in this offering' });
+  }
+
+  const archiveName = `${offering.academicYear}.${offering.term}.${course.code}-${offering.section}_Selected_${selectedDocs.length}_Files.zip`;
+
+  res.setHeader('Content-Type', 'application/zip');
+  res.setHeader('Content-Disposition', `attachment; filename="${archiveName}"`);
+
+  const archive = new ZipArchive({ zlib: { level: 6 } });
+  archive.on('error', function(err: any) {
+    console.error('[Selective Export] Archiver error:', err);
+    if (!res.headersSent) {
+      res.status(500).json({ error: 'Failed to create zip archive' });
+    } else {
+      res.end();
+    }
+  });
+
+  archive.pipe(res);
+
+  let manifestText = `========================================================================\n` +
+    `COURSE FILE ARCHIVE - CUSTOM SELECTIVE EXPORT MANIFEST\n` +
+    `========================================================================\n` +
+    `Course: ${course.code} - ${course.title}\n` +
+    `Session: ${offering.term} ${offering.academicYear} | Section: ${offering.section}\n` +
+    `Department: ${course.department}\n` +
+    `Exported By: ${currentUser.name} (${currentUser.email})\n` +
+    `Timestamp: ${new Date().toUTCString()}\n` +
+    `Total Selected Documents: ${selectedDocs.length}\n` +
+    `========================================================================\n\n` +
+    `INCLUDED ARTIFACTS:\n`;
+
+  for (let i = 0; i < selectedDocs.length; i++) {
+    const doc = selectedDocs[i];
+    const prefix = (i + 1).toString().padStart(2, '0');
+    const zipFileName = `${prefix}_${doc.fileName}`;
+    manifestText += `${prefix}. [${doc.category}] ${doc.fileName} (v${doc.version}, ${doc.status})\n`;
+    
+    try {
+      const fileData = await getFile(doc.storagePath);
+      archive.append(fileData.buffer, { name: zipFileName });
+    } catch (err) {
+      console.error(`Failed to fetch file ${doc.fileName}`, err);
+    }
+  }
+
+  archive.append(manifestText, { name: 'MANIFEST.txt' });
+  await archive.finalize();
+
+  await dbCreateAuditLog({
+    id: `log_${Date.now()}_${crypto.randomUUID().substring(0, 8)}`,
+    action: 'EXPORT_SELECTIVE_PACKAGE' as any,
+    actorId: currentUser.id,
+    actorName: currentUser.name,
+    actorEmail: currentUser.email,
+    timestamp: new Date().toISOString(),
+    details: `Selective export: ${selectedDocs.length} items from ${course.code} (Sec ${offering.section}, ${offering.term} ${offering.academicYear}).`,
   });
 });
 

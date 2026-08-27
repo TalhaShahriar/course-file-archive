@@ -41,6 +41,11 @@ export interface CourseOffering {
   section: string; // e.g. "01"
   instructorId: string; // refers to User
   auditorId?: string; // refers to User with role 'auditor'
+  submissionStatus?: 'draft' | 'submitted' | 'approved' | 'rejected';
+  submittedAt?: string;
+  submitterSignatureUrl?: string;
+  approvedAt?: string;
+  approverSignatureUrl?: string;
 }
 
 export type DocumentCategory = string;
@@ -312,3 +317,48 @@ export interface BulkQueueItem {
   progress: number;
   errorMessage?: string;
 }
+
+export interface AppNotification {
+  id: string;
+  userId: string;
+  title: string;
+  message: string;
+  type: 'info' | 'success' | 'warning' | 'action_required';
+  linkOfferingId?: string;
+  isRead: boolean;
+  createdAt: string;
+}
+
+export interface Core8CourseInfo {
+  code: string;
+  title: string;
+  level: string;
+  pillar: string;
+  focus: string;
+}
+
+export const CORE_8_CSE_COURSE_CODES = [
+  'CSE103', // Structured Programming
+  'CSE110', // Object Oriented Programming
+  'CSE207', // Data Structures
+  'CSE246', // Algorithms
+  'CSE302', // Database Systems
+  'CSE301', // Database Management Systems
+  'CSE325', // Operating Systems
+  'CSE360', // Computer Architecture
+  'CSE412', // Software Engineering
+  'CSE407', // Software Engineering
+  'CSE405', // Computer Networks
+  'CSE350', // Data Communications
+] as const;
+
+export const CORE_8_CSE_BENCHMARKS: Core8CourseInfo[] = [
+  { code: 'CSE103', title: 'Structured Programming', level: '100-Level', pillar: 'Programming Foundations', focus: 'Syntax, Problem Solving, Flow Control (PO1, PO2)' },
+  { code: 'CSE110', title: 'Object Oriented Programming', level: '100-Level', pillar: 'Object-Oriented Design', focus: 'Classes, Polymorphism, Inheritance (PO2, PO3)' },
+  { code: 'CSE207', title: 'Data Structures', level: '200-Level', pillar: 'Structural Data & Memory', focus: 'Lists, Trees, Graphs, Memory Complexity (PO2, PO3)' },
+  { code: 'CSE246', title: 'Algorithms', level: '200-Level', pillar: 'Algorithmic Efficiency', focus: 'DP, Greedy, Graph Algorithms, Asymptotics (PO2, PO3)' },
+  { code: 'CSE302', title: 'Database Systems', level: '300-Level', pillar: 'Data & Transaction Models', focus: 'Relational Design, SQL, Normalization, ACID (PO3, PO5)' },
+  { code: 'CSE325', title: 'Operating Systems', level: '300-Level', pillar: 'Systems & Concurrency', focus: 'Process Scheduling, Synchronization, Memory Paging (PO3, PO4)' },
+  { code: 'CSE360', title: 'Computer Architecture', level: '300-Level', pillar: 'Hardware Architecture', focus: 'ALU, Pipelining, Instruction Sets, Cache (PO1, PO3)' },
+  { code: 'CSE412', title: 'Software Engineering', level: '400-Level', pillar: 'Software Design & Lifecycle', focus: 'SDLC, Agile, Architecture, Quality Assurance (PO3, PO8, PO9)' },
+];

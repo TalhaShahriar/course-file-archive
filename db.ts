@@ -13,7 +13,8 @@ import {
   DocumentCategory,
   CategoryConfig,
   DOCUMENT_CATEGORIES,
-  CORE_16_CATEGORIES
+  CORE_16_CATEGORIES,
+  AppNotification
 } from './src/types.js';
 
 let currentDir = '';
@@ -104,36 +105,94 @@ const INITIAL_USERS: User[] = [
 ];
 
 const INITIAL_COURSES: Course[] = [
-  {
-    id: 'course_1',
-    code: 'CSE407',
-    title: 'Software Engineering',
-    department: 'Computer Science & Engineering',
-  },
-  {
-    id: 'course_2',
-    code: 'CSE301',
-    title: 'Database Management Systems',
-    department: 'Computer Science & Engineering',
-  },
-  {
-    id: 'course_3',
-    code: 'EEE201',
-    title: 'Electrical Circuits',
-    department: 'Electrical & Electronic Engineering',
-  },
-  {
-    id: 'course_4',
-    code: 'MAT102',
-    title: 'Calculus II',
-    department: 'Mathematics',
-  },
+  // Core CSE Courses
+  { id: 'course_cse412', code: 'CSE412', title: 'Software Engineering', department: 'Computer Science & Engineering' },
+  { id: 'course_cse302', code: 'CSE302', title: 'Database Systems', department: 'Computer Science & Engineering' },
+  { id: 'course_cse103', code: 'CSE103', title: 'Structured Programming', department: 'Computer Science & Engineering' },
+  { id: 'course_cse106', code: 'CSE106', title: 'Discrete Mathematics', department: 'Computer Science & Engineering' },
+  { id: 'course_cse110', code: 'CSE110', title: 'Object Oriented Programming', department: 'Computer Science & Engineering' },
+  { id: 'course_cse200', code: 'CSE200', title: 'Computer-Aided Engineering Drawing', department: 'Computer Science & Engineering' },
+  { id: 'course_cse207', code: 'CSE207', title: 'Data Structures', department: 'Computer Science & Engineering' },
+  { id: 'course_cse209', code: 'CSE209', title: 'Electrical Circuits', department: 'Computer Science & Engineering' },
+  { id: 'course_cse225', code: 'CSE225', title: 'Numerical Methods', department: 'Computer Science & Engineering' },
+  { id: 'course_cse246', code: 'CSE246', title: 'Algorithms', department: 'Computer Science & Engineering' },
+  { id: 'course_cse251', code: 'CSE251', title: 'Electronic Circuits', department: 'Computer Science & Engineering' },
+  { id: 'course_cse303', code: 'CSE303', title: 'Statistics for Data Science', department: 'Computer Science & Engineering' },
+  { id: 'course_cse313', code: 'CSE313', title: 'Theory of Computations', department: 'Computer Science & Engineering' },
+  { id: 'course_cse325', code: 'CSE325', title: 'Operating Systems', department: 'Computer Science & Engineering' },
+  { id: 'course_cse345', code: 'CSE345', title: 'Digital Logic Design', department: 'Computer Science & Engineering' },
+  { id: 'course_cse347', code: 'CSE347', title: 'Information System Analysis and Design', department: 'Computer Science & Engineering' },
+  { id: 'course_cse350', code: 'CSE350', title: 'Data Communications', department: 'Computer Science & Engineering' },
+  { id: 'course_cse355', code: 'CSE355', title: 'Digital System Design', department: 'Computer Science & Engineering' },
+  { id: 'course_cse360', code: 'CSE360', title: 'Computer Architecture', department: 'Computer Science & Engineering' },
+  { id: 'course_cse366', code: 'CSE366', title: 'Artificial Intelligence', department: 'Computer Science & Engineering' },
+  { id: 'course_cse400a', code: 'CSE400A', title: 'Capstone Project (Part 1 of 3)', department: 'Computer Science & Engineering' },
+  { id: 'course_cse400b', code: 'CSE400B', title: 'Capstone Project (Part 2 of 3)', department: 'Computer Science & Engineering' },
+  { id: 'course_cse400c', code: 'CSE400C', title: 'Capstone Project (Part 3 of 3)', department: 'Computer Science & Engineering' },
+  { id: 'course_cse405', code: 'CSE405', title: 'Computer Networks', department: 'Computer Science & Engineering' },
+  { id: 'course_cse406', code: 'CSE406', title: 'Internet of Things', department: 'Computer Science & Engineering' },
+  { id: 'course_cse407', code: 'CSE407', title: 'Green Computing', department: 'Computer Science & Engineering' },
+  { id: 'course_cse420', code: 'CSE420', title: 'Computer Graphics', department: 'Computer Science & Engineering' },
+  { id: 'course_cse422', code: 'CSE422', title: 'Simulation and Modeling', department: 'Computer Science & Engineering' },
+  { id: 'course_cse423', code: 'CSE423', title: 'Software Architecture', department: 'Computer Science & Engineering' },
+  { id: 'course_cse428', code: 'CSE428', title: 'Human Computer Interactions', department: 'Computer Science & Engineering' },
+  { id: 'course_cse430', code: 'CSE430', title: 'Software Testing and Quality Assurance', department: 'Computer Science & Engineering' },
+  { id: 'course_cse432', code: 'CSE432', title: 'Digital Signal Processing', department: 'Computer Science & Engineering' },
+  { id: 'course_cse438', code: 'CSE438', title: 'Digital Image Processing', department: 'Computer Science & Engineering' },
+  { id: 'course_cse442', code: 'CSE442', title: 'Microprocessors and Microcontrollers', department: 'Computer Science & Engineering' },
+  { id: 'course_cse445', code: 'CSE445', title: 'Computer Vision', department: 'Computer Science & Engineering' },
+  { id: 'course_cse446', code: 'CSE446', title: 'ASIC Design Using FPGA', department: 'Computer Science & Engineering' },
+  { id: 'course_cse452', code: 'CSE452', title: 'Distributed Systems and Algorithms', department: 'Computer Science & Engineering' },
+  { id: 'course_cse453', code: 'CSE453', title: 'Wireless Network', department: 'Computer Science & Engineering' },
+  { id: 'course_cse457', code: 'CSE457', title: 'Cellular Networks', department: 'Computer Science & Engineering' },
+  { id: 'course_cse460', code: 'CSE460', title: 'Cryptography', department: 'Computer Science & Engineering' },
+  { id: 'course_cse464', code: 'CSE464', title: 'Advanced Database System', department: 'Computer Science & Engineering' },
+  { id: 'course_cse471', code: 'CSE471', title: 'Compiler Design', department: 'Computer Science & Engineering' },
+  { id: 'course_cse472', code: 'CSE472', title: 'Advanced Network Services and Management', department: 'Computer Science & Engineering' },
+  { id: 'course_cse473', code: 'CSE473', title: 'Network Security and Systems', department: 'Computer Science & Engineering' },
+  { id: 'course_cse474', code: 'CSE474', title: 'Pattern Recognition', department: 'Computer Science & Engineering' },
+  { id: 'course_cse475', code: 'CSE475', title: 'Machine Learning', department: 'Computer Science & Engineering' },
+  { id: 'course_cse477', code: 'CSE477', title: 'Data Mining', department: 'Computer Science & Engineering' },
+  { id: 'course_cse479', code: 'CSE479', title: 'Web Programming', department: 'Computer Science & Engineering' },
+  { id: 'course_cse481', code: 'CSE481', title: 'Nature-Inspired Computing', department: 'Computer Science & Engineering' },
+  { id: 'course_cse483', code: 'CSE483', title: 'Graph Theory', department: 'Computer Science & Engineering' },
+  { id: 'course_cse484', code: 'CSE484', title: 'Computational Geometry', department: 'Computer Science & Engineering' },
+  { id: 'course_cse486', code: 'CSE486', title: 'Bioinformatics Algorithms', department: 'Computer Science & Engineering' },
+  { id: 'course_cse487', code: 'CSE487', title: 'Computer and Cyber Security', department: 'Computer Science & Engineering' },
+  { id: 'course_cse488', code: 'CSE488', title: 'Big Data Analytics', department: 'Computer Science & Engineering' },
+  { id: 'course_cse489', code: 'CSE489', title: 'Mobile Programming', department: 'Computer Science & Engineering' },
+  { id: 'course_cse491', code: 'CSE491', title: 'VLSI Design', department: 'Computer Science & Engineering' },
+  { id: 'course_cse492', code: 'CSE492', title: 'Robotics', department: 'Computer Science & Engineering' },
+  { id: 'course_cse494', code: 'CSE494', title: 'Embedded Systems', department: 'Computer Science & Engineering' },
+  { id: 'course_cse495', code: 'CSE495', title: 'IT Project Management and Entrepreneurship', department: 'Computer Science & Engineering' },
+
+  // Basic Science & Math Courses
+  { id: 'course_che109', code: 'CHE109', title: 'Engineering Chemistry-I', department: 'Basic Science' },
+  { id: 'course_phy109', code: 'PHY109', title: 'Engineering Physics-I', department: 'Basic Science' },
+  { id: 'course_phy209', code: 'PHY209', title: 'Engineering Physics-II', department: 'Basic Science' },
+  { id: 'course_mat101', code: 'MAT101', title: 'Differential & Integral Calculus', department: 'Mathematics' },
+  { id: 'course_mat102', code: 'MAT102', title: 'Differential Equations & Special Functions', department: 'Mathematics' },
+  { id: 'course_mat104', code: 'MAT104', title: 'Co-ordinate Geometry & Vector Analysis', department: 'Mathematics' },
+  { id: 'course_mat205', code: 'MAT205', title: 'Linear Algebra & Complex Variables', department: 'Mathematics' },
+  { id: 'course_sta102', code: 'STA102', title: 'Statistics and Probability', department: 'Mathematics' },
+
+  // General Education & Business Courses
+  { id: 'course_eng101', code: 'ENG101', title: 'Basic English', department: 'General Education' },
+  { id: 'course_eng102', code: 'ENG102', title: 'Composition and Communication Skills', department: 'General Education' },
+  { id: 'course_gen201', code: 'GEN201', title: 'Bangladesh Studies', department: 'General Education' },
+  { id: 'course_gen226', code: 'GEN226', title: 'Emergence of Bangladesh', department: 'General Education' },
+  { id: 'course_gen239', code: 'GEN239', title: 'Professional Ethics', department: 'General Education' },
+  { id: 'course_act101', code: 'ACT101', title: 'Financial Accounting', department: 'Business Administration' },
+  { id: 'course_bus231', code: 'BUS231', title: 'Business Communication', department: 'Business Administration' },
+  { id: 'course_bus321', code: 'BUS321', title: 'Business for Engineering and Technology', department: 'Business Administration' },
+  { id: 'course_eco101', code: 'ECO101', title: 'Principles of Microeconomics', department: 'Business Administration' },
+  { id: 'course_fin101', code: 'FIN101', title: 'Principles of Finance', department: 'Business Administration' },
 ];
 
 const INITIAL_OFFERINGS: CourseOffering[] = [
   {
     id: 'offering_1',
-    courseId: 'course_1',
+    courseId: 'course_cse412',
     academicYear: 2025,
     term: Term.SPRING,
     section: '01',
@@ -141,7 +200,7 @@ const INITIAL_OFFERINGS: CourseOffering[] = [
   },
   {
     id: 'offering_2',
-    courseId: 'course_1',
+    courseId: 'course_cse412',
     academicYear: 2025,
     term: Term.SPRING,
     section: '02',
@@ -149,7 +208,7 @@ const INITIAL_OFFERINGS: CourseOffering[] = [
   },
   {
     id: 'offering_3',
-    courseId: 'course_2',
+    courseId: 'course_cse302',
     academicYear: 2025,
     term: Term.SPRING,
     section: '01',
@@ -157,7 +216,7 @@ const INITIAL_OFFERINGS: CourseOffering[] = [
   },
   {
     id: 'offering_4',
-    courseId: 'course_3',
+    courseId: 'course_cse209',
     academicYear: 2024,
     term: Term.FALL,
     section: '01',
@@ -180,6 +239,7 @@ interface Database {
   documents: Document[];
   auditLogs: AuditLogEntry[];
   categories?: CategoryConfig[];
+  notifications?: AppNotification[];
 }
 
 const isPostgresConfigured = !!process.env.DATABASE_URL;
@@ -253,6 +313,11 @@ export function initDatabaseSchema(): Promise<void> {
           section VARCHAR(50) NOT NULL,
           instructor_id VARCHAR(50) REFERENCES users(id) ON DELETE SET NULL,
           auditor_id VARCHAR(50) REFERENCES users(id) ON DELETE SET NULL,
+          submission_status VARCHAR(30) DEFAULT 'draft',
+          submitted_at VARCHAR(100),
+          submitter_signature_url TEXT,
+          approved_at VARCHAR(100),
+          approver_signature_url TEXT,
           CONSTRAINT unique_offering UNIQUE (course_id, academic_year, term, section)
         )
       `;
@@ -261,6 +326,11 @@ export function initDatabaseSchema(): Promise<void> {
       await sql`
         ALTER TABLE offerings ADD COLUMN IF NOT EXISTS auditor_id VARCHAR(50) REFERENCES users(id) ON DELETE SET NULL
       `;
+      await sql`ALTER TABLE offerings ADD COLUMN IF NOT EXISTS submission_status VARCHAR(30) DEFAULT 'draft'`;
+      await sql`ALTER TABLE offerings ADD COLUMN IF NOT EXISTS submitted_at VARCHAR(100)`;
+      await sql`ALTER TABLE offerings ADD COLUMN IF NOT EXISTS submitter_signature_url TEXT`;
+      await sql`ALTER TABLE offerings ADD COLUMN IF NOT EXISTS approved_at VARCHAR(100)`;
+      await sql`ALTER TABLE offerings ADD COLUMN IF NOT EXISTS approver_signature_url TEXT`;
 
       // Create documents table
       await sql`
@@ -327,37 +397,50 @@ export function initDatabaseSchema(): Promise<void> {
         ALTER TABLE audit_logs ALTER COLUMN previous_entry_hash DROP NOT NULL
       `;
 
-      // Seed Initial Data if empty
-      const usersCount = await sql`SELECT count(*) FROM users`;
-      if (parseInt(usersCount[0].count) === 0) {
-        console.log('[Database] Seeding initial users...');
-        for (const u of INITIAL_USERS) {
-          await sql`
-            INSERT INTO users (id, name, email, role, department, avatar_url)
-            VALUES (${u.id}, ${u.name}, ${u.email}, ${u.role}, ${u.department}, ${u.avatarUrl})
-          `;
-        }
+      // Create notifications table
+      await sql`
+        CREATE TABLE IF NOT EXISTS notifications (
+          id VARCHAR(50) PRIMARY KEY,
+          user_id VARCHAR(50) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          title VARCHAR(200) NOT NULL,
+          message TEXT NOT NULL,
+          type VARCHAR(50) NOT NULL,
+          link_offering_id VARCHAR(50),
+          is_read BOOLEAN DEFAULT FALSE,
+          created_at VARCHAR(100) NOT NULL
+        )
+      `;
+
+      await sql`CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id)`;
+
+      // Seed / Sync Initial Courses
+      for (const c of INITIAL_COURSES) {
+        await sql`
+          INSERT INTO courses (id, code, title, department)
+          VALUES (${c.id}, ${c.code}, ${c.title}, ${c.department})
+          ON CONFLICT (code) DO UPDATE SET
+            title = EXCLUDED.title,
+            department = EXCLUDED.department
+        `;
       }
 
-      const coursesCount = await sql`SELECT count(*) FROM courses`;
-      if (parseInt(coursesCount[0].count) === 0) {
-        console.log('[Database] Seeding initial courses...');
-        for (const c of INITIAL_COURSES) {
-          await sql`
-            INSERT INTO courses (id, code, title, department)
-            VALUES (${c.id}, ${c.code}, ${c.title}, ${c.department})
+      // Seed / Sync Initial Offerings
+      for (const o of INITIAL_OFFERINGS) {
+        const targetCourse = INITIAL_COURSES.find(c => c.id === o.courseId);
+        if (targetCourse) {
+          const courseRows = await sql`SELECT id FROM courses WHERE code = ${targetCourse.code}`;
+          const actualCourseId = courseRows.length > 0 ? courseRows[0].id : o.courseId;
+          const existingOffering = await sql`
+            SELECT id FROM offerings 
+            WHERE course_id = ${actualCourseId} AND academic_year = ${o.academicYear} AND term = ${o.term} AND section = ${o.section}
           `;
-        }
-      }
-
-      const offeringsCount = await sql`SELECT count(*) FROM offerings`;
-      if (parseInt(offeringsCount[0].count) === 0) {
-        console.log('[Database] Seeding initial offerings...');
-        for (const o of INITIAL_OFFERINGS) {
-          await sql`
-            INSERT INTO offerings (id, course_id, academic_year, term, section, instructor_id)
-            VALUES (${o.id}, ${o.courseId}, ${o.academicYear}, ${o.term}, ${o.section}, ${o.instructorId})
-          `;
+          if (existingOffering.length === 0) {
+            await sql`
+              INSERT INTO offerings (id, course_id, academic_year, term, section, instructor_id)
+              VALUES (${o.id}, ${actualCourseId}, ${o.academicYear}, ${o.term}, ${o.section}, ${o.instructorId})
+              ON CONFLICT (id) DO NOTHING
+            `;
+          }
         }
       }
 
@@ -554,7 +637,14 @@ export async function dbCreateCourse(course: Course): Promise<Course> {
 export async function dbGetOfferings(): Promise<CourseOffering[]> {
   if (sql) {
     const rows = await sql`
-      SELECT id, course_id as "courseId", academic_year as "academicYear", term, section, instructor_id as "instructorId", auditor_id as "auditorId" 
+      SELECT 
+        id, course_id as "courseId", academic_year as "academicYear", term, section, 
+        instructor_id as "instructorId", auditor_id as "auditorId",
+        submission_status as "submissionStatus",
+        submitted_at as "submittedAt",
+        submitter_signature_url as "submitterSignatureUrl",
+        approved_at as "approvedAt",
+        approver_signature_url as "approverSignatureUrl"
       FROM offerings
     `;
     return rows as CourseOffering[];
@@ -566,8 +656,14 @@ export async function dbGetOfferings(): Promise<CourseOffering[]> {
 export async function dbCreateOffering(offering: CourseOffering): Promise<CourseOffering> {
   if (sql) {
     await sql`
-      INSERT INTO offerings (id, course_id, academic_year, term, section, instructor_id, auditor_id)
-      VALUES (${offering.id}, ${offering.courseId}, ${offering.academicYear}, ${offering.term}, ${offering.section}, ${offering.instructorId}, ${offering.auditorId || null})
+      INSERT INTO offerings (
+        id, course_id, academic_year, term, section, instructor_id, auditor_id,
+        submission_status, submitted_at, submitter_signature_url, approved_at, approver_signature_url
+      )
+      VALUES (
+        ${offering.id}, ${offering.courseId}, ${offering.academicYear}, ${offering.term}, ${offering.section}, ${offering.instructorId}, ${offering.auditorId || null},
+        ${offering.submissionStatus || 'draft'}, ${offering.submittedAt || null}, ${offering.submitterSignatureUrl || null}, ${offering.approvedAt || null}, ${offering.approverSignatureUrl || null}
+      )
     `;
     return offering;
   }
@@ -591,6 +687,52 @@ export async function dbUpdateOfferingAuditor(offeringId: string, auditorId: str
   const offering = db.offerings.find(o => o.id === offeringId);
   if (!offering) return null;
   offering.auditorId = auditorId || undefined;
+  writeLocalDB(db);
+  return offering;
+}
+
+export async function dbUpdateOfferingStatus(
+  offeringId: string, 
+  updates: {
+    submissionStatus?: 'draft' | 'submitted' | 'approved' | 'rejected',
+    submittedAt?: string,
+    submitterSignatureUrl?: string,
+    approvedAt?: string,
+    approverSignatureUrl?: string
+  }
+): Promise<CourseOffering | null> {
+  if (sql) {
+    // Just fetch existing first for simplicity, or do a dynamic update
+    const rows = await sql`
+      UPDATE offerings 
+      SET 
+        submission_status = COALESCE(${updates.submissionStatus ?? null}, submission_status),
+        submitted_at = COALESCE(${updates.submittedAt ?? null}, submitted_at),
+        submitter_signature_url = COALESCE(${updates.submitterSignatureUrl ?? null}, submitter_signature_url),
+        approved_at = COALESCE(${updates.approvedAt ?? null}, approved_at),
+        approver_signature_url = COALESCE(${updates.approverSignatureUrl ?? null}, approver_signature_url)
+      WHERE id = ${offeringId}
+      RETURNING 
+        id, course_id as "courseId", academic_year as "academicYear", term, section, 
+        instructor_id as "instructorId", auditor_id as "auditorId",
+        submission_status as "submissionStatus",
+        submitted_at as "submittedAt",
+        submitter_signature_url as "submitterSignatureUrl",
+        approved_at as "approvedAt",
+        approver_signature_url as "approverSignatureUrl"
+    `;
+    return rows.length > 0 ? (rows[0] as CourseOffering) : null;
+  }
+  const db = readLocalDB();
+  const offering = db.offerings.find(o => o.id === offeringId);
+  if (!offering) return null;
+  
+  if (updates.submissionStatus !== undefined) offering.submissionStatus = updates.submissionStatus;
+  if (updates.submittedAt !== undefined) offering.submittedAt = updates.submittedAt;
+  if (updates.submitterSignatureUrl !== undefined) offering.submitterSignatureUrl = updates.submitterSignatureUrl;
+  if (updates.approvedAt !== undefined) offering.approvedAt = updates.approvedAt;
+  if (updates.approverSignatureUrl !== undefined) offering.approverSignatureUrl = updates.approverSignatureUrl;
+  
   writeLocalDB(db);
   return offering;
 }
@@ -951,4 +1093,101 @@ export async function dbCreateAuditLog(log: AuditLogEntry): Promise<AuditLogEntr
   db.auditLogs.push(fullLog);
   writeLocalDB(db);
   return fullLog;
+}
+
+// NOTIFICATIONS
+export async function dbGetNotifications(userId: string): Promise<AppNotification[]> {
+  if (sql) {
+    const rows = await sql`
+      SELECT 
+        id, 
+        user_id as "userId", 
+        title, 
+        message, 
+        type, 
+        link_offering_id as "linkOfferingId", 
+        is_read as "isRead", 
+        created_at as "createdAt"
+      FROM notifications
+      WHERE user_id = ${userId}
+      ORDER BY created_at DESC
+      LIMIT 100
+    `;
+    return rows as AppNotification[];
+  }
+  const db = readLocalDB();
+  if (!db.notifications) db.notifications = [];
+  return db.notifications
+    .filter(n => n.userId === userId)
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+}
+
+export async function dbCreateNotification(notif: AppNotification): Promise<AppNotification> {
+  if (sql) {
+    await sql`
+      INSERT INTO notifications (id, user_id, title, message, type, link_offering_id, is_read, created_at)
+      VALUES (
+        ${notif.id}, 
+        ${notif.userId}, 
+        ${notif.title}, 
+        ${notif.message}, 
+        ${notif.type}, 
+        ${notif.linkOfferingId || null}, 
+        ${notif.isRead || false}, 
+        ${notif.createdAt}
+      )
+    `;
+    return notif;
+  }
+  const db = readLocalDB();
+  if (!db.notifications) db.notifications = [];
+  db.notifications.unshift(notif);
+  writeLocalDB(db);
+  return notif;
+}
+
+export async function dbMarkNotificationRead(id: string): Promise<boolean> {
+  if (sql) {
+    const res = await sql`UPDATE notifications SET is_read = TRUE WHERE id = ${id}`;
+    return res.count > 0;
+  }
+  const db = readLocalDB();
+  if (!db.notifications) db.notifications = [];
+  const notif = db.notifications.find(n => n.id === id);
+  if (notif) {
+    notif.isRead = true;
+    writeLocalDB(db);
+    return true;
+  }
+  return false;
+}
+
+export async function dbMarkAllNotificationsRead(userId: string): Promise<boolean> {
+  if (sql) {
+    await sql`UPDATE notifications SET is_read = TRUE WHERE user_id = ${userId}`;
+    return true;
+  }
+  const db = readLocalDB();
+  if (!db.notifications) db.notifications = [];
+  db.notifications.forEach(n => {
+    if (n.userId === userId) n.isRead = true;
+  });
+  writeLocalDB(db);
+  return true;
+}
+
+export async function dbDeleteNotification(id: string): Promise<boolean> {
+  if (sql) {
+    const res = await sql`DELETE FROM notifications WHERE id = ${id}`;
+    return res.count > 0;
+  }
+  const db = readLocalDB();
+  if (!db.notifications) db.notifications = [];
+  const idx = db.notifications.findIndex(n => n.id === id);
+  if (idx >= 0) {
+    db.notifications.splice(idx, 1);
+    writeLocalDB(db);
+    return true;
+  }
+  return false;
 }
