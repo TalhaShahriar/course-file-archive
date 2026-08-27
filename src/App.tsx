@@ -3169,198 +3169,198 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                                           {slot.number}
                                         </div>
 
-                                        <div className="min-w-0 flex-1 space-y-1">
-                                          <div 
-                                            className={`flex items-center gap-2 flex-wrap ${hasSubSlots ? 'cursor-pointer' : ''}`}
-                                            onClick={() => hasSubSlots && toggleSlotExpansion(slot.number)}
-                                          >
-                                            <h4 className="text-xs sm:text-sm font-bold text-primary truncate" title={slot.label}>
-                                              {slot.label}
-                                            </h4>
-                                            {slot.isCore ? (
-                                              <span className="bg-brand/10 text-brand px-1.5 py-0.5 rounded text-[9px] uppercase font-bold font-mono">Core</span>
-                                            ) : (
-                                              <span className="bg-surface-hover text-quaternary px-1.5 py-0.5 rounded text-[9px] uppercase font-bold font-mono">Optional</span>
-                                            )}
-                                            {slot.hardcopyNote && (
-                                              <span className="bg-surface-hover text-tertiary px-2 py-0.5 rounded text-[10px] font-mono font-medium">
-                                                Hardcopy: {slot.hardcopyNote}
-                                              </span>
-                                            )}
-                                            {hasSubSlots && (
-                                              <span className="inline-flex items-center gap-1 text-[10px] font-mono font-bold bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 px-2 py-0.5 rounded-full border border-indigo-500/20">
-                                                <FolderTree className="w-3 h-3" /> {uploadedSubCount}/{slot.subSlots!.length} Samples Uploaded
-                                              </span>
-                                            )}
-                                          </div>
-
-                                          {slot.filenameExample && (
-                                            <p className="text-[11px] font-mono text-tertiary">
-                                              Filename Example: <span className="font-bold text-rose-600 dark:text-rose-400">{slot.filenameExample}</span>
-                                            </p>
-                                          )}
-
-                                          <div className="flex flex-wrap items-center gap-2 text-[10px] text-tertiary font-mono pt-0.5">
-                                            <span className="bg-border-subtle/75 text-secondary-muted px-1.5 py-0.5 rounded text-[8px] uppercase font-bold">
-                                              {slot.group}
-                                            </span>
-                                            {mainDoc ? (
-                                              <>
-                                                <span className="text-success-muted font-bold bg-success-subtle px-1.5 py-0.5 rounded text-[8px] uppercase">Uploaded</span>
-                                                <span className="text-quaternary">• v{mainDoc.version}</span>
-                                                <span className="text-quaternary truncate max-w-[200px] font-semibold" title={mainDoc.fileName}>
-                                                  • {mainDoc.fileName}
+                                          <div className="min-w-0 flex-1 space-y-1">
+                                            <div 
+                                              className={`flex items-center gap-2 flex-wrap ${hasSubSlots ? 'cursor-pointer' : ''}`}
+                                              onClick={() => hasSubSlots && toggleSlotExpansion(slot.number)}
+                                            >
+                                              <h4 className="text-xs sm:text-sm font-bold text-primary truncate" title={slot.label}>
+                                                {slot.label}
+                                              </h4>
+                                              {slot.isCore ? (
+                                                <span className="bg-brand/10 text-brand px-1.5 py-0.5 rounded text-[9px] uppercase font-bold font-mono">Core</span>
+                                              ) : (
+                                                <span className="bg-surface-hover text-quaternary px-1.5 py-0.5 rounded text-[9px] uppercase font-bold font-mono">Optional</span>
+                                              )}
+                                              {hasSubSlots && (
+                                                <span className="bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 px-2 py-0.5 rounded text-[9px] uppercase font-bold font-mono border border-indigo-500/20">
+                                                  Question Paper / Spec
                                                 </span>
-                                                <button 
-                                                  type="button"
-                                                  onClick={() => setPreviewDoc(mainDoc)} 
-                                                  className="text-brand hover:text-brand-bolder font-bold underline flex items-center justify-center gap-1 shrink-0 ml-1 cursor-pointer"
-                                                  title="Open Document Preview"
-                                                >
-                                                  <Eye className="w-3 h-3" /> View
-                                                </button>
-                                                {sortedMainVersions.length > 0 && (
+                                              )}
+                                              {hasSubSlots && (
+                                                <span className="inline-flex items-center gap-1 text-[10px] font-mono font-bold bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 px-2 py-0.5 rounded-full border border-indigo-500/20">
+                                                  <FolderTree className="w-3 h-3" /> {uploadedSubCount}/{slot.subSlots!.length} Samples Uploaded
+                                                </span>
+                                              )}
+                                            </div>
+
+                                            {slot.filenameExample && (
+                                              <p className="text-[11px] font-mono text-tertiary">
+                                                Filename Example: <span className="font-bold text-rose-600 dark:text-rose-400">{slot.filenameExample}</span>
+                                              </p>
+                                            )}
+
+                                            <div className="flex flex-wrap items-center gap-2 text-[10px] text-tertiary font-mono pt-0.5">
+                                              <span className="bg-border-subtle/75 text-secondary-muted px-1.5 py-0.5 rounded text-[8px] uppercase font-bold">
+                                                {slot.group}
+                                              </span>
+                                              {mainDoc ? (
+                                                <>
+                                                  <span className="text-success-muted font-bold bg-success-subtle px-1.5 py-0.5 rounded text-[8px] uppercase">Uploaded</span>
+                                                  <span className="text-quaternary">• v{mainDoc.version}</span>
+                                                  <span className="text-quaternary truncate max-w-[200px] font-semibold" title={mainDoc.fileName}>
+                                                    • {mainDoc.fileName}
+                                                  </span>
+                                                  <button 
+                                                    type="button"
+                                                    onClick={() => setPreviewDoc(mainDoc)} 
+                                                    className="text-brand hover:text-brand-bolder font-bold underline flex items-center justify-center gap-1 shrink-0 ml-1 cursor-pointer"
+                                                    title="Open Document Preview"
+                                                  >
+                                                    <Eye className="w-3 h-3" /> View
+                                                  </button>
+                                                  {sortedMainVersions.length > 0 && (
+                                                    <button
+                                                      type="button"
+                                                      onClick={() => { setHistoryModalCategory(slot.id); setHistoryModalOfferingId(selectedOffering.id); }}
+                                                      className="text-tertiary hover:text-brand font-bold flex items-center justify-center gap-1 shrink-0 ml-1 cursor-pointer"
+                                                      title="View Full Version History Modal"
+                                                    >
+                                                      <History className="w-3 h-3 text-brand" /> History ({sortedMainVersions.length})
+                                                    </button>
+                                                  )}
+                                                </>
+                                              ) : (
+                                                <>
+                                                  <span className="text-error-muted font-bold bg-error-subtle px-1.5 py-0.5 rounded text-[8px] uppercase">Missing</span>
+                                                  <span className="text-quaternary">• Empty slot {hasSubSlots ? '(Question Paper)' : ''}</span>
+                                                </>
+                                              )}
+                                            </div>
+
+                                            {mainDoc && mainDoc.feedback && (
+                                              <div className="text-[11px] text-error-muted bg-error-subtle border border-error-divider rounded-xl p-2.5 mt-2 font-sans flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                                                <div className="min-w-0 flex-1">
+                                                  <strong className="font-bold uppercase tracking-wider text-[10px] block font-mono text-rose-600 dark:text-rose-400">Reviewer Change Request:</strong>
+                                                  <span className="italic font-medium">"{mainDoc.feedback}"</span>
+                                                </div>
+                                                {(currentUser.role === UserRole.ADMIN || currentUser.role === UserRole.DEPT_HEAD) && (
                                                   <button
                                                     type="button"
-                                                    onClick={() => { setHistoryModalCategory(slot.id); setHistoryModalOfferingId(selectedOffering.id); }}
-                                                    className="text-tertiary hover:text-brand font-bold flex items-center justify-center gap-1 shrink-0 ml-1 cursor-pointer"
-                                                    title="View Full Version History Modal"
+                                                    onClick={() => openDocRevisionEmail(mainDoc)}
+                                                    className="inline-flex items-center gap-1 text-[10px] font-bold uppercase font-mono px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white rounded-lg transition shrink-0 cursor-pointer shadow-xs"
+                                                    title="Send or preview revision email to instructor"
                                                   >
-                                                    <History className="w-3 h-3 text-brand" /> History ({sortedMainVersions.length})
+                                                    <Mail className="w-3 h-3" /> Email Faculty
                                                   </button>
                                                 )}
-                                              </>
-                                            ) : (
-                                              <>
-                                                <span className="text-error-muted font-bold bg-error-subtle px-1.5 py-0.5 rounded text-[8px] uppercase">Missing</span>
-                                                <span className="text-quaternary">• Empty slot</span>
-                                              </>
+                                              </div>
                                             )}
                                           </div>
+                                        </div>
 
-                                          {mainDoc && mainDoc.feedback && (
-                                            <div className="text-[11px] text-error-muted bg-error-subtle border border-error-divider rounded-xl p-2.5 mt-2 font-sans flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                                              <div className="min-w-0 flex-1">
-                                                <strong className="font-bold uppercase tracking-wider text-[10px] block font-mono text-rose-600 dark:text-rose-400">Reviewer Change Request:</strong>
-                                                <span className="italic font-medium">"{mainDoc.feedback}"</span>
+                                        {/* Right: Slot Controls */}
+                                        <div className="flex items-center gap-2 shrink-0 self-end lg:self-center">
+                                          {mainDoc ? (
+                                            <div className="flex items-center gap-2">
+                                              <div className="text-right">
+                                                <span className="block text-[9px] font-bold text-quaternary uppercase tracking-widest font-mono">STATUS</span>
+                                                {mainDoc.status === 'approved' && (
+                                                  <span className="inline-flex items-center gap-1 text-[10px] font-bold text-success-bold font-mono">
+                                                    <CheckCircle className="w-3.5 h-3.5 text-success" /> APPROVED
+                                                  </span>
+                                                )}
+                                                {mainDoc.status === 'rejected' && (
+                                                  <span className="inline-flex items-center gap-1 text-[10px] font-bold text-error-bold font-mono">
+                                                    <XCircle className="w-3.5 h-3.5 text-error" /> REJECTED
+                                                  </span>
+                                                )}
+                                                {mainDoc.status === 'pending_review' && (
+                                                  <span className="inline-flex items-center gap-1 text-[10px] font-bold text-warning-bold font-mono">
+                                                    <Clock className="w-3.5 h-3.5 text-warning animate-pulse" /> PENDING
+                                                  </span>
+                                                )}
                                               </div>
-                                              {(currentUser.role === UserRole.ADMIN || currentUser.role === UserRole.DEPT_HEAD) && (
+
+                                              {((currentUser.id === selectedOffering.instructorId || currentUser.role === UserRole.ADMIN) && (mainDoc.status === 'rejected' || mainDoc.status === 'pending_review')) && (
                                                 <button
-                                                  type="button"
-                                                  onClick={() => openDocRevisionEmail(mainDoc)}
-                                                  className="inline-flex items-center gap-1 text-[10px] font-bold uppercase font-mono px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white rounded-lg transition shrink-0 cursor-pointer shadow-xs"
-                                                  title="Send or preview revision email to instructor"
+                                                  onClick={() => {
+                                                    setUploadCategory(slot.id);
+                                                    setUploadText('');
+                                                    setSelectedFile(null);
+                                                    setUploadFormError('');
+                                                    if (slotFileInputRef.current) slotFileInputRef.current.value = '';
+                                                    slotFileInputRef.current?.click();
+                                                  }}
+                                                  className="min-w-[40px] min-h-[40px] flex items-center justify-center bg-surface-hover hover:bg-border-subtle text-secondary-muted hover:text-brand rounded-xl transition cursor-pointer"
+                                                  title={hasSubSlots ? "Update Question Paper Submission" : "Update File Submission"}
                                                 >
-                                                  <Mail className="w-3 h-3" /> Email Faculty
+                                                  <FileUp className="w-4 h-4" />
+                                                </button>
+                                              )}
+
+                                              {(currentUser.role === UserRole.DEPT_HEAD || currentUser.role === UserRole.ADMIN) && (
+                                                <button
+                                                  onClick={() => {
+                                                    setReviewStatus(mainDoc.status === 'rejected' ? 'rejected' : 'approved');
+                                                    setReviewFeedback(mainDoc.feedback || '');
+                                                    setShowReviewDoc(mainDoc);
+                                                  }}
+                                                  className="min-w-[40px] min-h-[40px] flex items-center justify-center bg-surface-hover hover:bg-border-subtle text-secondary-muted hover:text-brand rounded-xl transition cursor-pointer"
+                                                  title="Review Submission"
+                                                >
+                                                  <Settings className="w-4 h-4" />
+                                                </button>
+                                              )}
+
+                                              {(currentUser.role === UserRole.ADMIN || currentUser.id === selectedOffering.instructorId) && (
+                                                <button
+                                                  onClick={() => handleDeleteDoc(mainDoc.id, mainDoc.fileName)}
+                                                  className="min-w-[40px] min-h-[40px] flex items-center justify-center bg-surface-hover hover:bg-border-subtle text-error hover:text-error-bolder rounded-xl transition cursor-pointer"
+                                                  title="Delete Document"
+                                                >
+                                                  <Trash2 className="w-4 h-4" />
+                                                </button>
+                                              )}
+                                            </div>
+                                          ) : (
+                                            <div className="flex items-center gap-2">
+                                              <span className="text-[10px] font-bold text-quaternary font-mono uppercase bg-surface-hover px-2 py-1 rounded">
+                                                MISSING
+                                              </span>
+                                              {(currentUser.id === selectedOffering.instructorId || currentUser.role === UserRole.ADMIN) && (
+                                                <button
+                                                  onClick={() => {
+                                                    setUploadCategory(slot.id);
+                                                    setUploadText('');
+                                                    setSelectedFile(null);
+                                                    setUploadFormError('');
+                                                    if (slotFileInputRef.current) slotFileInputRef.current.value = '';
+                                                    slotFileInputRef.current?.click();
+                                                  }}
+                                                  className="inline-flex items-center justify-center gap-1 bg-brand hover:bg-brand-hover text-white font-semibold px-3.5 py-2 rounded-xl text-xs transition cursor-pointer shadow-sm shadow-brand/10"
+                                                >
+                                                  <Plus className="w-3.5 h-3.5" /> {hasSubSlots ? 'Upload Question' : 'Upload'}
                                                 </button>
                                               )}
                                             </div>
                                           )}
+
+                                          {hasSubSlots && (
+                                            <button
+                                              type="button"
+                                              onClick={() => toggleSlotExpansion(slot.number)}
+                                              className={`min-w-[40px] min-h-[40px] flex items-center justify-center rounded-xl transition cursor-pointer border ${
+                                                isExpanded 
+                                                  ? 'bg-brand text-white border-brand shadow-sm' 
+                                                  : 'bg-surface-hover hover:bg-brand/10 text-secondary border-subtle'
+                                              }`}
+                                              title={isExpanded ? "Collapse Sub-slots" : "Expand Sub-slots (a, b, c)"}
+                                            >
+                                              <ChevronDown className={`w-4 h-4 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`} />
+                                            </button>
+                                          )}
                                         </div>
-                                      </div>
-
-                                      {/* Right: Slot Controls */}
-                                      <div className="flex items-center gap-2 shrink-0 self-end lg:self-center">
-                                        {mainDoc ? (
-                                          <div className="flex items-center gap-2">
-                                            <div className="text-right">
-                                              <span className="block text-[9px] font-bold text-quaternary uppercase tracking-widest font-mono">STATUS</span>
-                                              {mainDoc.status === 'approved' && (
-                                                <span className="inline-flex items-center gap-1 text-[10px] font-bold text-success-bold font-mono">
-                                                  <CheckCircle className="w-3.5 h-3.5 text-success" /> APPROVED
-                                                </span>
-                                              )}
-                                              {mainDoc.status === 'rejected' && (
-                                                <span className="inline-flex items-center gap-1 text-[10px] font-bold text-error-bold font-mono">
-                                                  <XCircle className="w-3.5 h-3.5 text-error" /> REJECTED
-                                                </span>
-                                              )}
-                                              {mainDoc.status === 'pending_review' && (
-                                                <span className="inline-flex items-center gap-1 text-[10px] font-bold text-warning-bold font-mono">
-                                                  <Clock className="w-3.5 h-3.5 text-warning animate-pulse" /> PENDING
-                                                </span>
-                                              )}
-                                            </div>
-
-                                            {((currentUser.id === selectedOffering.instructorId || currentUser.role === UserRole.ADMIN) && (mainDoc.status === 'rejected' || mainDoc.status === 'pending_review')) && (
-                                              <button
-                                                onClick={() => {
-                                                  setUploadCategory(slot.id);
-                                                  setUploadText('');
-                                                  setSelectedFile(null);
-                                                  setUploadFormError('');
-                                                  if (slotFileInputRef.current) slotFileInputRef.current.value = '';
-                                                  slotFileInputRef.current?.click();
-                                                }}
-                                                className="min-w-[40px] min-h-[40px] flex items-center justify-center bg-surface-hover hover:bg-border-subtle text-secondary-muted hover:text-brand rounded-xl transition cursor-pointer"
-                                                title="Update File Submission"
-                                              >
-                                                <FileUp className="w-4 h-4" />
-                                              </button>
-                                            )}
-
-                                            {(currentUser.role === UserRole.DEPT_HEAD || currentUser.role === UserRole.ADMIN) && (
-                                              <button
-                                                onClick={() => {
-                                                  setReviewStatus(mainDoc.status === 'rejected' ? 'rejected' : 'approved');
-                                                  setReviewFeedback(mainDoc.feedback || '');
-                                                  setShowReviewDoc(mainDoc);
-                                                }}
-                                                className="min-w-[40px] min-h-[40px] flex items-center justify-center bg-surface-hover hover:bg-border-subtle text-secondary-muted hover:text-brand rounded-xl transition cursor-pointer"
-                                                title="Review Submission"
-                                              >
-                                                <Settings className="w-4 h-4" />
-                                              </button>
-                                            )}
-
-                                            {(currentUser.role === UserRole.ADMIN || currentUser.id === selectedOffering.instructorId) && (
-                                              <button
-                                                onClick={() => handleDeleteDoc(mainDoc.id, mainDoc.fileName)}
-                                                className="min-w-[40px] min-h-[40px] flex items-center justify-center bg-surface-hover hover:bg-border-subtle text-error hover:text-error-bolder rounded-xl transition cursor-pointer"
-                                                title="Delete Document"
-                                              >
-                                                <Trash2 className="w-4 h-4" />
-                                              </button>
-                                            )}
-                                          </div>
-                                        ) : (
-                                          <div className="flex items-center gap-2">
-                                            <span className="text-[10px] font-bold text-quaternary font-mono uppercase bg-surface-hover px-2 py-1 rounded">
-                                              MISSING
-                                            </span>
-                                            {(currentUser.id === selectedOffering.instructorId || currentUser.role === UserRole.ADMIN) && (
-                                              <button
-                                                onClick={() => {
-                                                  setUploadCategory(slot.id);
-                                                  setUploadText('');
-                                                  setSelectedFile(null);
-                                                  setUploadFormError('');
-                                                  if (slotFileInputRef.current) slotFileInputRef.current.value = '';
-                                                  slotFileInputRef.current?.click();
-                                                }}
-                                                className="inline-flex items-center justify-center gap-1 bg-brand hover:bg-brand-hover text-white font-semibold px-3.5 py-2 rounded-xl text-xs transition cursor-pointer shadow-sm shadow-brand/10"
-                                              >
-                                                <Plus className="w-3.5 h-3.5" /> Upload
-                                              </button>
-                                            )}
-                                          </div>
-                                        )}
-
-                                        {hasSubSlots && (
-                                          <button
-                                            type="button"
-                                            onClick={() => toggleSlotExpansion(slot.number)}
-                                            className={`min-w-[40px] min-h-[40px] flex items-center justify-center rounded-xl transition cursor-pointer border ${
-                                              isExpanded 
-                                                ? 'bg-brand text-white border-brand shadow-sm' 
-                                                : 'bg-surface-hover hover:bg-brand/10 text-secondary border-subtle'
-                                            }`}
-                                            title={isExpanded ? "Collapse Sub-slots" : "Expand Sub-slots (a, b, c)"}
-                                          >
-                                            <ChevronDown className={`w-4 h-4 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`} />
-                                          </button>
-                                        )}
-                                      </div>
                                     </div>
                                   </div>
 

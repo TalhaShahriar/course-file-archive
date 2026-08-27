@@ -57,7 +57,6 @@ export interface CourseFileSlotConfig {
   number: string; // "01", "02", ... "16"
   id: string; // main category id
   label: string; // "Final grades of the students (Tabulation Sheet)"
-  hardcopyNote?: string; // "Yes (2 copies)" or "Yes"
   filenameExample?: string; // "2025.3.CSE103-00.xlsx" for OBE
   group: string;
   isCore: boolean;
@@ -75,7 +74,6 @@ export const OFFICIAL_16_COURSE_FILE_STRUCTURE: CourseFileSlotConfig[] = [
     number: '01',
     id: 'final_grades',
     label: 'Final grades of the students (Tabulation Sheet)',
-    hardcopyNote: 'Yes (2 copies)',
     group: 'Grades & Results',
     isCore: true,
   },
@@ -84,7 +82,6 @@ export const OFFICIAL_16_COURSE_FILE_STRUCTURE: CourseFileSlotConfig[] = [
     id: 'obe_excel',
     label: 'OBE Excel Sheet (soft copy)',
     filenameExample: '2025.3.CSE103-00.xlsx',
-    hardcopyNote: 'Yes',
     group: 'OBE & CQI',
     isCore: true,
   },
@@ -92,7 +89,6 @@ export const OFFICIAL_16_COURSE_FILE_STRUCTURE: CourseFileSlotConfig[] = [
     number: '03',
     id: 'co_attainment',
     label: 'CO Attainment Report (From OBE Excel)',
-    hardcopyNote: 'Yes',
     group: 'OBE & CQI',
     isCore: true,
   },
@@ -100,7 +96,6 @@ export const OFFICIAL_16_COURSE_FILE_STRUCTURE: CourseFileSlotConfig[] = [
     number: '04',
     id: 'po_attainment',
     label: 'PO Attainment Report (From OBE Excel)',
-    hardcopyNote: 'Yes',
     group: 'OBE & CQI',
     isCore: true,
   },
@@ -108,7 +103,6 @@ export const OFFICIAL_16_COURSE_FILE_STRUCTURE: CourseFileSlotConfig[] = [
     number: '05',
     id: 'grade_summary_cqi',
     label: 'Grade Summary with CQI Improvement Plan (From OBE Excel)',
-    hardcopyNote: 'Yes',
     group: 'OBE & CQI',
     isCore: true,
   },
@@ -116,7 +110,6 @@ export const OFFICIAL_16_COURSE_FILE_STRUCTURE: CourseFileSlotConfig[] = [
     number: '06',
     id: 'instructor_feedback',
     label: 'Instructor Feedback (From OBE Excel)',
-    hardcopyNote: 'Yes',
     group: 'OBE & CQI',
     isCore: true,
   },
@@ -124,7 +117,6 @@ export const OFFICIAL_16_COURSE_FILE_STRUCTURE: CourseFileSlotConfig[] = [
     number: '07',
     id: 'course_outline',
     label: 'Course Outline',
-    hardcopyNote: 'Yes',
     group: 'Syllabus & Info',
     isCore: true,
   },
@@ -132,7 +124,6 @@ export const OFFICIAL_16_COURSE_FILE_STRUCTURE: CourseFileSlotConfig[] = [
     number: '08',
     id: 'class_test_question',
     label: '1) Class Test Assessment Question',
-    hardcopyNote: 'Yes',
     group: 'Class Tests',
     isCore: true,
     subSlots: [
@@ -145,7 +136,6 @@ export const OFFICIAL_16_COURSE_FILE_STRUCTURE: CourseFileSlotConfig[] = [
     number: '09',
     id: 'midterm_question',
     label: '1) Midterm Assessment Question',
-    hardcopyNote: 'Yes',
     group: 'Midterms',
     isCore: true,
     subSlots: [
@@ -158,7 +148,6 @@ export const OFFICIAL_16_COURSE_FILE_STRUCTURE: CourseFileSlotConfig[] = [
     number: '10',
     id: 'final_question',
     label: '1) Final Exam Question',
-    hardcopyNote: 'Yes',
     group: 'Finals',
     isCore: true,
     subSlots: [
@@ -171,7 +160,6 @@ export const OFFICIAL_16_COURSE_FILE_STRUCTURE: CourseFileSlotConfig[] = [
     number: '11',
     id: 'projects_list',
     label: '1) List of projects/assignments with description',
-    hardcopyNote: 'Yes',
     group: 'Projects & Reports',
     isCore: true,
     subSlots: [
@@ -184,7 +172,6 @@ export const OFFICIAL_16_COURSE_FILE_STRUCTURE: CourseFileSlotConfig[] = [
     number: '12',
     id: 'lab_experiments_list',
     label: 'List of lab experiments',
-    hardcopyNote: 'Yes',
     group: 'Labs & Practical',
     isCore: true,
   },
@@ -192,7 +179,6 @@ export const OFFICIAL_16_COURSE_FILE_STRUCTURE: CourseFileSlotConfig[] = [
     number: '13',
     id: 'class_attendance',
     label: 'Class Attendance',
-    hardcopyNote: 'Yes',
     group: 'Attendance',
     isCore: true,
   },
@@ -200,7 +186,6 @@ export const OFFICIAL_16_COURSE_FILE_STRUCTURE: CourseFileSlotConfig[] = [
     number: '14',
     id: 'lab_attendance',
     label: 'Lab Attendance',
-    hardcopyNote: 'Yes',
     group: 'Attendance',
     isCore: true,
   },
@@ -208,7 +193,6 @@ export const OFFICIAL_16_COURSE_FILE_STRUCTURE: CourseFileSlotConfig[] = [
     number: '15',
     id: 'midterm_attendance',
     label: 'Mid Term Exam Attendance',
-    hardcopyNote: 'Yes',
     group: 'Attendance',
     isCore: true,
   },
@@ -216,7 +200,6 @@ export const OFFICIAL_16_COURSE_FILE_STRUCTURE: CourseFileSlotConfig[] = [
     number: '16',
     id: 'final_attendance',
     label: 'Final Exam Attendance',
-    hardcopyNote: 'Yes',
     group: 'Attendance',
     isCore: true,
   },
