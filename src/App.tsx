@@ -84,7 +84,7 @@ import {
 
 import { GoogleLogin } from '@react-oauth/google';
 import SignatureCanvas from 'react-signature-canvas';
-const isFirebaseConfigured = false;
+const isGoogleAuthConfigured = true;
 
 
 function useDarkMode() {
@@ -1423,7 +1423,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
   const handleGoogleSignIn = async () => {
     setLoginError('');
     if (!loginEmail) {
-      setLoginError('Please provide an email address (Firebase configuration is currently offline)');
+      setLoginError('Please sign in with your university Google account using the button below.');
       return;
     }
     try {
@@ -1452,8 +1452,8 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          email: '', // backend will extract from token
-          firebaseToken: idToken,
+          email: '', // backend extracts email from Google token
+          googleToken: idToken,
         }),
       });
       const data = await res.json();

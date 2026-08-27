@@ -142,7 +142,7 @@ app.get('/api/me', async (req: Request, res: Response) => {
 });
 
 app.post('/api/login', loginLimiter, async (req: Request, res: Response) => {
-  const { email, firebaseToken } = req.body;
+  const { email, googleToken } = req.body;
   
   let targetEmail = email;
   let targetName = '';
@@ -150,10 +150,11 @@ app.post('/api/login', loginLimiter, async (req: Request, res: Response) => {
 
   const client = new OAuth2Client();
   
-  if (firebaseToken) {
+  if (googleToken) {
     try {
       const ticket = await client.verifyIdToken({
-          idToken: firebaseToken,
+          idToken: googleToken,
+          audience: process.env.GOOGLE_CLIENT_ID,
       });
       const payload = ticket.getPayload();
       if (!payload) {
@@ -200,7 +201,7 @@ app.post('/api/login', loginLimiter, async (req: Request, res: Response) => {
 
   // Log the login action
   const timestamp = new Date().toISOString();
-  const details = `User ${user.name} logged in successfully via Firebase Google Sign-In.`;
+  const details = `User ${user.name} logged in successfully via Google Sign-In.`;
 
   await dbCreateAuditLog({
     id: `log_${Date.now()}`,

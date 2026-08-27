@@ -9,7 +9,7 @@ if (container) {
   const root = createRoot(container);
   root.render(
     <React.StrictMode>
-      <GoogleOAuthProvider clientId="1039898746403-9lbjvhopbvgdk6hggccu92qibffh1bej.apps.googleusercontent.com">
+      <GoogleOAuthProvider clientId="1093073461126-una4hdcp25r9g6gr05u7453lmmpfscrv.apps.googleusercontent.com">
         <App />
       </GoogleOAuthProvider>
     </React.StrictMode>
