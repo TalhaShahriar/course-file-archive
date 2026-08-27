@@ -1,0 +1,6 @@
+{
+  "name": "Course File Archive",
+  "description": "University course-file archive and compliance ledger with role-based clearance.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

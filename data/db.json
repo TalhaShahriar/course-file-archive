@@ -1,0 +1,393 @@
+{
+  "users": [
+    {
+      "id": "user_1",
+      "name": "Dr. Alice Smith",
+      "email": "alice@university.edu",
+      "role": "instructor",
+      "department": "Computer Science & Engineering",
+      "avatarUrl": "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150"
+    },
+    {
+      "id": "user_2",
+      "name": "Prof. Bob Johnson",
+      "email": "bob@university.edu",
+      "role": "instructor",
+      "department": "Computer Science & Engineering",
+      "avatarUrl": "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150"
+    },
+    {
+      "id": "user_3",
+      "name": "Dr. Sarah Jenkins",
+      "email": "head@university.edu",
+      "role": "dept_head",
+      "department": "Computer Science & Engineering",
+      "avatarUrl": "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=150"
+    },
+    {
+      "id": "user_4",
+      "name": "James Carter",
+      "email": "auditor@university.edu",
+      "role": "auditor",
+      "department": "Academic Registry",
+      "avatarUrl": "https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?w=150"
+    },
+    {
+      "id": "user_5",
+      "name": "Admin Controller",
+      "email": "admin@university.edu",
+      "role": "admin",
+      "department": "IT Administration",
+      "avatarUrl": "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150"
+    }
+  ],
+  "courses": [
+    {
+      "id": "course_1",
+      "code": "CSE407",
+      "title": "Software Engineering",
+      "department": "Computer Science & Engineering"
+    },
+    {
+      "id": "course_2",
+      "code": "CSE301",
+      "title": "Database Management Systems",
+      "department": "Computer Science & Engineering"
+    },
+    {
+      "id": "course_3",
+      "code": "EEE201",
+      "title": "Electrical Circuits",
+      "department": "Electrical & Electronic Engineering"
+    },
+    {
+      "id": "course_4",
+      "code": "MAT102",
+      "title": "Calculus II",
+      "department": "Mathematics"
+    }
+  ],
+  "offerings": [
+    {
+      "id": "offering_1",
+      "courseId": "course_1",
+      "academicYear": 2025,
+      "term": "Spring",
+      "section": "01",
+      "instructorId": "user_1"
+    },
+    {
+      "id": "offering_2",
+      "courseId": "course_1",
+      "academicYear": 2025,
+      "term": "Spring",
+      "section": "02",
+      "instructorId": "user_2"
+    },
+    {
+      "id": "offering_3",
+      "courseId": "course_2",
+      "academicYear": 2025,
+      "term": "Spring",
+      "section": "01",
+      "instructorId": "user_1"
+    },
+    {
+      "id": "offering_4",
+      "courseId": "course_3",
+      "academicYear": 2024,
+      "term": "Fall",
+      "section": "01",
+      "instructorId": "user_2"
+    }
+  ],
+  "documents": [],
+  "auditLogs": [
+    {
+      "id": "log_0",
+      "action": "SYSTEM_INIT",
+      "actorId": "system",
+      "actorName": "System Core",
+      "actorEmail": "system@university.edu",
+      "timestamp": "2026-07-20T12:26:30.654Z",
+      "details": "System initialized with core course catalog",
+      "entryHash": "b13e15b24f9bf3199ed8b4fb082ed1f32b498ec4420b2e645011c3bb18492585",
+      "previousEntryHash": "0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "id": "log_1784644423380",
+      "action": "USER_LOGIN",
+      "actorId": "user_5",
+      "actorName": "Admin Controller",
+      "actorEmail": "admin@university.edu",
+      "timestamp": "2026-07-21T14:33:43.379Z",
+      "details": "User Admin Controller logged in successfully via Firebase Google Sign-In.",
+      "entryHash": "39940e5193df0cf8e58e029b7bfe22d5643b3e4743d476993f0aaec3b2139d96",
+      "previousEntryHash": "b13e15b24f9bf3199ed8b4fb082ed1f32b498ec4420b2e645011c3bb18492585"
+    },
+    {
+      "id": "log_1784645780904",
+      "action": "USER_LOGIN",
+      "actorId": "user_5",
+      "actorName": "Admin Controller",
+      "actorEmail": "admin@university.edu",
+      "timestamp": "2026-07-21T14:56:20.904Z",
+      "details": "User Admin Controller logged in successfully via Firebase Google Sign-In.",
+      "entryHash": "fc304c7fa491ee0dfe0cf5e214cfada09d2221dd4049bcb774c0dcf36b2ea887",
+      "previousEntryHash": "39940e5193df0cf8e58e029b7bfe22d5643b3e4743d476993f0aaec3b2139d96"
+    },
+    {
+      "id": "log_1784645794643",
+      "action": "USER_LOGIN",
+      "actorId": "user_1",
+      "actorName": "Dr. Alice Smith",
+      "actorEmail": "alice@university.edu",
+      "timestamp": "2026-07-21T14:56:34.643Z",
+      "details": "User Dr. Alice Smith logged in successfully via Firebase Google Sign-In.",
+      "entryHash": "e8a96e6295bbe26c21a6cd06e1bb8cd0d80664ee95051004d7e2696db38e9fac",
+      "previousEntryHash": "fc304c7fa491ee0dfe0cf5e214cfada09d2221dd4049bcb774c0dcf36b2ea887"
+    },
+    {
+      "id": "log_1784646083611",
+      "action": "USER_LOGIN",
+      "actorId": "user_1",
+      "actorName": "Dr. Alice Smith",
+      "actorEmail": "alice@university.edu",
+      "timestamp": "2026-07-21T15:01:23.611Z",
+      "details": "User Dr. Alice Smith logged in successfully via Firebase Google Sign-In.",
+      "entryHash": "4a4466e1ee45446a6e23d0b9f02fb2748ea88f9e6df3505ea08a77d399daa84f",
+      "previousEntryHash": "e8a96e6295bbe26c21a6cd06e1bb8cd0d80664ee95051004d7e2696db38e9fac"
+    },
+    {
+      "id": "log_1784647487822",
+      "action": "USER_LOGIN",
+      "actorId": "user_1",
+      "actorName": "Dr. Alice Smith",
+      "actorEmail": "alice@university.edu",
+      "timestamp": "2026-07-21T15:24:47.822Z",
+      "details": "User Dr. Alice Smith logged in successfully via Firebase Google Sign-In.",
+      "entryHash": "ff78345803b9df07bdda2430a7db5dd2afe3f43c8fd3bf1b961893926544ddd1",
+      "previousEntryHash": "4a4466e1ee45446a6e23d0b9f02fb2748ea88f9e6df3505ea08a77d399daa84f"
+    },
+    {
+      "id": "log_1784648020371",
+      "action": "USER_LOGIN",
+      "actorId": "user_1",
+      "actorName": "Dr. Alice Smith",
+      "actorEmail": "alice@university.edu",
+      "timestamp": "2026-07-21T15:33:40.371Z",
+      "details": "User Dr. Alice Smith logged in successfully via Firebase Google Sign-In.",
+      "entryHash": "43e7f4315eb25eff0c8c0386fbd7e80a23021a01ae74e2b0cc04b60d8e29ce25",
+      "previousEntryHash": "ff78345803b9df07bdda2430a7db5dd2afe3f43c8fd3bf1b961893926544ddd1"
+    },
+    {
+      "id": "log_1787800848154",
+      "action": "USER_LOGIN",
+      "actorId": "user_5",
+      "actorName": "Admin Controller",
+      "actorEmail": "admin@university.edu",
+      "timestamp": "2026-08-27T03:20:48.154Z",
+      "details": "User Admin Controller logged in successfully via Firebase Google Sign-In.",
+      "entryHash": "",
+      "previousEntryHash": ""
+    }
+  ],
+  "categories": [
+    {
+      "id": "course_outline",
+      "label": "Course Outline",
+      "group": "Syllabus & Info",
+      "isCore": true,
+      "isActive": true
+    },
+    {
+      "id": "class_attendance",
+      "label": "Class Attendance Log",
+      "group": "Attendance",
+      "isCore": true,
+      "isActive": true
+    },
+    {
+      "id": "midterm_attendance",
+      "label": "Midterm Attendance Log",
+      "group": "Attendance",
+      "isCore": true,
+      "isActive": true
+    },
+    {
+      "id": "final_attendance",
+      "label": "Final Attendance Log",
+      "group": "Attendance",
+      "isCore": true,
+      "isActive": true
+    },
+    {
+      "id": "lab_attendance",
+      "label": "Lab Attendance Log",
+      "group": "Attendance",
+      "isCore": false,
+      "isActive": true
+    },
+    {
+      "id": "class_test_question",
+      "label": "Class Test Question Paper",
+      "group": "Class Tests",
+      "isCore": true,
+      "isActive": true
+    },
+    {
+      "id": "class_test_sample_highest",
+      "label": "Class Test Sample (Highest)",
+      "group": "Class Tests",
+      "isCore": true,
+      "isActive": true
+    },
+    {
+      "id": "class_test_sample_average",
+      "label": "Class Test Sample (Average)",
+      "group": "Class Tests",
+      "isCore": false,
+      "isActive": true
+    },
+    {
+      "id": "class_test_sample_marginal",
+      "label": "Class Test Sample (Marginal)",
+      "group": "Class Tests",
+      "isCore": false,
+      "isActive": true
+    },
+    {
+      "id": "midterm_question",
+      "label": "Midterm Exam Question Paper",
+      "group": "Midterms",
+      "isCore": true,
+      "isActive": true
+    },
+    {
+      "id": "midterm_sample_highest",
+      "label": "Midterm Exam Sample (Highest)",
+      "group": "Midterms",
+      "isCore": true,
+      "isActive": true
+    },
+    {
+      "id": "midterm_sample_average",
+      "label": "Midterm Exam Sample (Average)",
+      "group": "Midterms",
+      "isCore": false,
+      "isActive": true
+    },
+    {
+      "id": "midterm_sample_marginal",
+      "label": "Midterm Exam Sample (Marginal)",
+      "group": "Midterms",
+      "isCore": false,
+      "isActive": true
+    },
+    {
+      "id": "final_question",
+      "label": "Final Exam Question Paper",
+      "group": "Finals",
+      "isCore": true,
+      "isActive": true
+    },
+    {
+      "id": "final_sample_highest",
+      "label": "Final Exam Sample (Highest)",
+      "group": "Finals",
+      "isCore": true,
+      "isActive": true
+    },
+    {
+      "id": "final_sample_average",
+      "label": "Final Exam Sample (Average)",
+      "group": "Finals",
+      "isCore": false,
+      "isActive": true
+    },
+    {
+      "id": "final_sample_marginal",
+      "label": "Final Exam Sample (Marginal)",
+      "group": "Finals",
+      "isCore": false,
+      "isActive": true
+    },
+    {
+      "id": "lab_experiments_list",
+      "label": "Lab Experiments List",
+      "group": "Labs & Projects",
+      "isCore": true,
+      "isActive": true
+    },
+    {
+      "id": "projects_list",
+      "label": "Projects List",
+      "group": "Labs & Projects",
+      "isCore": true,
+      "isActive": true
+    },
+    {
+      "id": "projects_sample_highest",
+      "label": "Project Sample (Highest)",
+      "group": "Labs & Projects",
+      "isCore": false,
+      "isActive": true
+    },
+    {
+      "id": "projects_sample_average",
+      "label": "Project Sample (Average)",
+      "group": "Labs & Projects",
+      "isCore": false,
+      "isActive": true
+    },
+    {
+      "id": "projects_sample_marginal",
+      "label": "Project Sample (Marginal)",
+      "group": "Labs & Projects",
+      "isCore": false,
+      "isActive": true
+    },
+    {
+      "id": "final_grades",
+      "label": "Final Grade Sheet",
+      "group": "Grades & Attainment",
+      "isCore": true,
+      "isActive": true
+    },
+    {
+      "id": "obe_excel",
+      "label": "OBE Assessment Sheet (Excel)",
+      "group": "Grades & Attainment",
+      "isCore": true,
+      "isActive": true
+    },
+    {
+      "id": "co_attainment",
+      "label": "CO Attainment Report",
+      "group": "Grades & Attainment",
+      "isCore": true,
+      "isActive": true
+    },
+    {
+      "id": "po_attainment",
+      "label": "PO Attainment Report",
+      "group": "Grades & Attainment",
+      "isCore": false,
+      "isActive": true
+    },
+    {
+      "id": "grade_summary_cqi",
+      "label": "Grade Summary & CQI Report",
+      "group": "Grades & Attainment",
+      "isCore": true,
+      "isActive": true
+    },
+    {
+      "id": "instructor_feedback",
+      "label": "Instructor Feedback Form",
+      "group": "Grades & Attainment",
+      "isCore": false,
+      "isActive": true
+    }
+  ]
+}
