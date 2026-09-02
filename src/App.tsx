@@ -59,7 +59,12 @@ import {
   Bell,
   Printer,
   Star,
-  Award
+  Award,
+  EyeOff,
+  UserPlus,
+  KeyRound,
+  LogIn,
+  ArrowRight
 } from 'lucide-react';
 
 import { 
@@ -82,7 +87,7 @@ import {
   CORE_8_CSE_BENCHMARKS
 } from './types';
 
-import { GoogleLogin } from '@react-oauth/google';
+import { GoogleLogin, useGoogleOneTapLogin } from '@react-oauth/google';
 import SignatureCanvas from 'react-signature-canvas';
 const isGoogleAuthConfigured = true;
 
@@ -203,7 +208,18 @@ export default function App() {
   // Authentication State
   const [currentUser, setCurrentUser] = useState<UserType | null>(null);
   const [isLoadingAuth, setIsLoadingAuth] = useState(true);
+  const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
   const [loginEmail, setLoginEmail] = useState('');
+  const [loginPassword, setLoginPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [registerName, setRegisterName] = useState('');
+  const [registerEmail, setRegisterEmail] = useState('');
+  const [registerPassword, setRegisterPassword] = useState('');
+  const [registerDept, setRegisterDept] = useState('Department of Computer Science & Engineering');
+  const [registerRole, setRegisterRole] = useState<UserRole>(UserRole.INSTRUCTOR);
+  const [isAuthSubmitting, setIsAuthSubmitting] = useState(false);
+  const [showDemoAccounts, setShowDemoAccounts] = useState(false);
+  const [showManualLogin, setShowManualLogin] = useState(false);
   const [loginError, setLoginError] = useState('');
 
   // Domain Catalog State
@@ -342,6 +358,7 @@ export default function App() {
   // Portfolio-specific inner search/filters
   const [portfolioCategorySearch, setPortfolioCategorySearch] = useState('');
   const [portfolioStatusFilter, setPortfolioStatusFilter] = useState<'all' | 'uploaded' | 'missing' | 'approved' | 'pending' | 'rejected'>('all');
+  const [portfolioViewColumns, setPortfolioViewColumns] = useState<'1-col' | '2-col'>('2-col');
   const [expandedSubSlots, setExpandedSubSlots] = useState<Record<string, boolean>>({ '08': false, '09': false, '10': false, '11': false });
   const [showRoleManualModal, setShowRoleManualModal] = useState(false);
   const [manualSelectedRole, setManualSelectedRole] = useState<UserRole>(UserRole.INSTRUCTOR);
@@ -926,7 +943,7 @@ export default function App() {
         fetch('/api/courses'),
         fetch('/api/offerings'),
         fetch('/api/documents'),
-        fetch('/api/audit-log'),
+        currentUser?.role === UserRole.ADMIN ? fetch('/api/audit-log') : Promise.resolve(null),
         fetch('/api/users'),
         fetch('/api/categories?all=true'),
         fetch('/api/trash'),
@@ -936,7 +953,7 @@ export default function App() {
       const coursesData = await coursesRes.json();
       const offeringsData = await offeringsRes.json();
       const docsData = await docsRes.json();
-      const logsData = await logsRes.json();
+      const logsData = logsRes ? await logsRes.json().catch(() => ({})) : {};
       const usersData = await usersRes.json();
       const catData = await catRes.json();
       const trashData = await trashRes.json();
@@ -1110,6 +1127,68 @@ export default function App() {
     setShowSignatureModal(true);
   };
 
+  const handleSignatureSubmit = async () => {
+    if (!selectedOffering || !signatureAction) return;
+
+    let signatureDataUrl = '';
+
+    if (signatureMode === 'draw') {
+      if (!sigCanvasRef.current || sigCanvasRef.current.isEmpty()) {
+        showNotification('Please draw your signature on the canvas first', 'error');
+        return;
+      }
+      signatureDataUrl = sigCanvasRef.current.getTrimmedCanvas().toDataURL('image/png');
+    } else if (signatureMode === 'upload') {
+      if (!uploadedSignatureUrl) {
+        showNotification('Please upload an image of your signature (.png or .jpg)', 'error');
+        return;
+      }
+      signatureDataUrl = uploadedSignatureUrl;
+    } else if (signatureMode === 'type') {
+      if (!typedSignatureName.trim()) {
+        showNotification('Please type your full name for the automated signature', 'error');
+        return;
+      }
+      signatureDataUrl = generateTypedSignatureDataUrl(typedSignatureName, typedSignatureFont);
+    }
+
+    if (!signatureDataUrl) {
+      showNotification('Could not generate signature image', 'error');
+      return;
+    }
+
+    try {
+      const endpoint = signatureAction === 'submit' 
+        ? `/api/offerings/${selectedOffering.id}/submit` 
+        : `/api/offerings/${selectedOffering.id}/approve`;
+
+      const res = await fetch(endpoint, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ signatureUrl: signatureDataUrl })
+      });
+
+      const data = await res.json();
+      if (res.ok) {
+        showNotification(
+          signatureAction === 'submit' 
+            ? '🎉 Course portfolio submitted and digitally signed successfully!' 
+            : '✅ Course portfolio officially approved and endorsed!',
+          'success'
+        );
+        setShowSignatureModal(false);
+        fetchAllData();
+        if (data.offering) {
+          setSelectedOffering(data.offering);
+        }
+      } else {
+        showNotification(data.error || 'Failed to submit signature', 'error');
+      }
+    } catch (err) {
+      showNotification('Network error submitting digital signature', 'error');
+    }
+  };
+
   const showNotification = (message: string, type: 'success' | 'error' | 'info') => {
     setNotification({ message, type });
   };
@@ -1117,8 +1196,8 @@ export default function App() {
   const getAccessibleOfferings = () => {
     if (!currentUser) return [];
     
-    // Admins have full access
-    if (currentUser.role === UserRole.ADMIN) {
+    // Admins and Universal Data Entry Operator have full access across all course offerings
+    if (currentUser.role === UserRole.ADMIN || currentUser.email === 'data-entry@ewubd.edu') {
       return offerings;
     }
     
@@ -1210,8 +1289,8 @@ ${currentUser?.role === UserRole.DEPT_HEAD ? 'Department Head' : 'Academic Admin
       role: UserRole.INSTRUCTOR
     };
 
-    const courseCode = docOffering?.course?.code || doc.course?.code || 'Course';
-    const courseTitle = docOffering?.course?.title || doc.course?.title || '';
+    const courseCode = docOffering?.course?.code || (doc as any).course?.code || 'Course';
+    const courseTitle = docOffering?.course?.title || (doc as any).course?.title || '';
     const termStr = docOffering ? `${docOffering.term} ${docOffering.academicYear}` : '';
     const sectionStr = docOffering?.section ? ` (Section ${docOffering.section})` : '';
     const categoryLabel = getCategoryLabel(doc.category);
@@ -1418,29 +1497,103 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
     }
   };
 
-  // Auth Operations
-
-  const handleGoogleSignIn = async () => {
-    setLoginError('');
-    if (!loginEmail) {
-      setLoginError('Please sign in with your university Google account using the button below.');
+  const handleDeleteUser = (user: UserType) => {
+    if (currentUser?.id === user.id) {
+      showNotification('You cannot delete your own active administrator account', 'error');
       return;
     }
+
+    requestConfirmation(
+      'Delete User Personnel',
+      `Are you sure you want to delete "${user.name}" (${user.email}) from the personnel directory? Any course teaching or audit assignments for this user will be unlinked. This action will be recorded in the audit log.`,
+      'Delete User',
+      async () => {
+        try {
+          const res = await fetch(`/api/users/${user.id}`, { method: 'DELETE' });
+          const data = await res.json();
+          if (res.ok) {
+            showNotification(`User "${user.name}" was successfully removed`, 'success');
+            fetchAllData();
+          } else {
+            showNotification(getUserFriendlyErrorMessage(data.error || 'Failed to delete user'), 'error');
+          }
+        } catch (err) {
+          showNotification('Network error deleting user', 'error');
+        }
+      },
+      true
+    );
+  };
+
+  // Auth Operations
+
+  const handleEmailPasswordLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoginError('');
+    if (!loginEmail || !loginPassword) {
+      setLoginError('Please enter both your university email and password.');
+      return;
+    }
+    setIsAuthSubmitting(true);
     try {
       const res = await fetch('/api/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: loginEmail }),
+        body: JSON.stringify({ email: loginEmail, password: loginPassword }),
       });
       const data = await res.json();
       if (res.ok) {
         setCurrentUser(data.user);
-        showNotification(`Welcome back, ${data.user.name}! (Simulated Access)`, 'success');
+        showNotification(`Welcome back, ${data.user.name}!`, 'success');
+        setLoginPassword('');
       } else {
         setLoginError(data.error || 'Authentication failed');
       }
     } catch (err) {
-      setLoginError('Network connection issue. Server may be starting.');
+      setLoginError('Network connection issue. Express server may be starting.');
+    } finally {
+      setIsAuthSubmitting(false);
+    }
+  };
+
+  const handleRegister = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoginError('');
+    if (!registerName.trim() || !registerEmail.trim() || !registerPassword) {
+      setLoginError('Full name, university email, and password are required.');
+      return;
+    }
+    if (registerPassword.length < 6) {
+      setLoginError('Password must be at least 6 characters long.');
+      return;
+    }
+    setIsAuthSubmitting(true);
+    try {
+      const res = await fetch('/api/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: registerName.trim(),
+          email: registerEmail.trim(),
+          password: registerPassword,
+          department: registerDept || 'Department of Computer Science & Engineering',
+          role: registerRole || UserRole.INSTRUCTOR,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setCurrentUser(data.user);
+        showNotification(`Account created successfully! Welcome, ${data.user.name}.`, 'success');
+        setRegisterPassword('');
+        setRegisterName('');
+        setRegisterEmail('');
+      } else {
+        setLoginError(data.error || 'Registration failed');
+      }
+    } catch (err) {
+      setLoginError('Network connection issue during registration.');
+    } finally {
+      setIsAuthSubmitting(false);
     }
   };
 
@@ -1473,10 +1626,12 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
     setLoginError('Google Sign-In failed.');
   };
 
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    await handleGoogleSignIn();
-  };
+  useGoogleOneTapLogin({
+    onSuccess: handleOAuthSuccess,
+    onError: handleOAuthError,
+    disabled: !!currentUser,
+    auto_select: true,
+  });
 
   const handleQuickLogin = async (email: string) => {
     setLoginError('');
@@ -2226,128 +2381,345 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
   // --- LOGIN VIEW ---
   if (!currentUser) {
     return (
-      <div className="min-h-screen bg-background flex flex-col justify-between py-12 px-4 sm:px-6 lg:px-8 text-secondary-muted font-sans antialiased">
-        <div className="max-w-md w-full mx-auto space-y-8 my-auto">
-          {/* Header */}
+      <div className="min-h-screen bg-background flex flex-col justify-between py-8 px-4 sm:px-6 lg:px-8 text-secondary-muted font-sans antialiased">
+        <div className="max-w-md w-full mx-auto space-y-4 my-auto">
+          {/* Header Theme Toggle */}
           <div className="absolute top-4 right-4">
-          <button
-            onClick={toggleTheme}
-            className="p-2 text-tertiary hover:text-primary transition rounded-full hover:bg-surface-hover shrink-0"
-            title="Toggle Theme"
-          >
-            {theme === 'dark' ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
-          </button>
-</div>
+            <button
+              onClick={toggleTheme}
+              className="p-2 text-tertiary hover:text-primary transition rounded-full hover:bg-surface-hover shrink-0 cursor-pointer"
+              title="Toggle Theme"
+            >
+              {theme === 'dark' ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
+            </button>
+          </div>
+
           <div className="text-center">
-            <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-brand shadow-lg shadow-indigo-600/20 mb-4">
-              <Database className="w-8 h-8 text-white" />
+            <div className="inline-flex items-center justify-center w-13 h-13 rounded-2xl bg-brand shadow-lg shadow-brand/20 mb-2.5">
+              <Database className="w-6.5 h-6.5 text-white" />
             </div>
-            <h2 className="text-3xl font-bold text-primary tracking-tight">Course File Archive</h2>
-            <p className="mt-2 text-sm text-tertiary">
-              University Course-File & Portfolio Management System
+            <h2 className="text-2xl font-bold text-primary tracking-tight">Course File Archive</h2>
+            <p className="mt-0.5 text-xs text-tertiary">
+              East West University Course Portfolio System
             </p>
           </div>
 
           {/* Login Card */}
-          <div className="bg-surface border border-subtle rounded-3xl p-8 shadow-xl space-y-6">
-            <div className="border-b border-divider pb-5">
-              <h3 className="text-lg font-bold text-primary flex items-center gap-2">
-                <Lock className="w-4 h-4 text-brand" /> Staff Sign In
-              </h3>
-              <p className="text-xs text-tertiary mt-1">
-                All uploads, reviews, and endorsements are securely tracked and archived.
-              </p>
-            </div>
-
-            <form onSubmit={handleLogin} className="space-y-4">
-              <div>
-                <label htmlFor="email" className="block text-xs font-bold uppercase tracking-wider text-tertiary mb-2">
-                  University Email
-                </label>
-                <div className="relative">
-                  <span className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-quaternary">
-                    @
-                  </span>
-                  <input
-                    id="email"
-                    type="email"
-                    value={loginEmail}
-                    onChange={(e) => setLoginEmail(e.target.value)}
-                    placeholder="instructor@university.edu"
-                    className="w-full bg-background border border-subtle rounded-xl py-3 pl-8 pr-4 text-primary placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-sm transition text-sm"
-                  />
-                </div>
-              </div>
-
-              {loginError && (
-                <div className="p-3 bg-error-subtle border border-error-divider rounded-xl text-xs text-error-muted flex items-center gap-2">
-                  <AlertCircle className="w-4 h-4 shrink-0" />
-                  <span>{loginError}</span>
-                </div>
-              )}
-
-              <button
-                type="submit"
-                className="w-full flex items-center justify-center gap-2 bg-brand hover:bg-brand-hover text-white font-semibold py-3 px-4 rounded-xl transition shadow-lg shadow-indigo-500/10 cursor-pointer text-sm"
-              >
-                <UserCheck className="w-4 h-4" /> Sign In
-              </button>
-              <div className="flex justify-center mt-4">
+          <div className="bg-surface border border-slate-200 dark:border-slate-800 rounded-3xl p-6 sm:p-8 shadow-xl space-y-5">
+            
+            {/* GOOGLE SIGN-IN SECTION */}
+            <div className="flex flex-col items-center justify-center pt-1">
+              <div className="flex justify-center w-full">
                 <GoogleLogin
                   onSuccess={handleOAuthSuccess}
                   onError={handleOAuthError}
-                  
                   theme={theme === 'dark' ? 'filled_black' : 'outline'}
-                  use_fedcm_for_prompt={false}
+                  size="large"
+                  text="continue_with"
+                  shape="pill"
+                  width="320"
+                  auto_select={true}
+                  useOneTap={true}
                 />
               </div>
-            </form>
-
-            <div className="relative flex py-2 items-center">
-              <div className="flex-grow border-t border-divider"></div>
-              <span className="flex-shrink mx-4 text-xs font-mono text-quaternary">OR QUICK SELECT A DEMO ROLE</span>
-              <div className="flex-grow border-t border-divider"></div>
             </div>
 
-            {/* Quick Login Role Selector */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {/* DIVIDER */}
+            <div className="relative flex items-center justify-center my-2">
+              <div className="flex-grow border-t border-slate-300/80 dark:border-slate-700/80"></div>
+              <span className="flex-shrink mx-4 text-xs font-mono tracking-widest text-slate-400 dark:text-slate-500 uppercase font-medium">
+                OR QUICK SELECT A DEMO ROLE
+              </span>
+              <div className="flex-grow border-t border-slate-300/80 dark:border-slate-700/80"></div>
+            </div>
+
+            {/* ERROR BANNER */}
+            {loginError && (
+              <div className="p-3 bg-error-subtle border border-error-divider rounded-xl text-xs text-error-muted flex items-start gap-2 animate-shake">
+                <AlertCircle className="w-4 h-4 shrink-0 text-error mt-0.5" />
+                <div className="flex-1 font-medium">{loginError}</div>
+              </div>
+            )}
+
+            {/* DEMO ROLES GRID (2x2) */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+              {/* System Admin */}
               <button
+                type="button"
                 onClick={() => handleQuickLogin('admin@university.edu')}
-                className="flex flex-col items-start p-3 bg-background hover:bg-surface-hover border border-subtle hover:border-brand/50 rounded-2xl text-left transition cursor-pointer"
+                className="p-4 bg-surface hover:bg-slate-50 dark:hover:bg-slate-800/60 border border-slate-300 dark:border-slate-700 hover:border-slate-400 dark:hover:border-slate-500 rounded-2xl text-left transition-all duration-150 cursor-pointer group shadow-2xs"
               >
-                <span className="text-xs font-bold text-primary-muted">System Admin</span>
-                <span className="text-xs text-tertiary font-mono mt-1">admin@university.edu</span>
+                <div className="font-bold text-primary text-sm tracking-tight group-hover:text-brand transition-colors">
+                  System Admin
+                </div>
+                <div className="text-xs font-mono text-slate-500 dark:text-slate-400 mt-1">
+                  admin@university.edu
+                </div>
               </button>
 
+              {/* Department Head */}
               <button
+                type="button"
                 onClick={() => handleQuickLogin('head@university.edu')}
-                className="flex flex-col items-start p-3 bg-background hover:bg-surface-hover border border-subtle hover:border-brand/50 rounded-2xl text-left transition cursor-pointer"
+                className="p-4 bg-surface hover:bg-slate-50 dark:hover:bg-slate-800/60 border border-slate-300 dark:border-slate-700 hover:border-slate-400 dark:hover:border-slate-500 rounded-2xl text-left transition-all duration-150 cursor-pointer group shadow-2xs"
               >
-                <span className="text-xs font-bold text-primary-muted">Department Head</span>
-                <span className="text-xs text-tertiary font-mono mt-1">head@university.edu</span>
+                <div className="font-bold text-primary text-sm tracking-tight group-hover:text-brand transition-colors">
+                  Department Head
+                </div>
+                <div className="text-xs font-mono text-slate-500 dark:text-slate-400 mt-1">
+                  head@university.edu
+                </div>
               </button>
 
+              {/* Dr. Alice Smith */}
               <button
+                type="button"
                 onClick={() => handleQuickLogin('alice@university.edu')}
-                className="flex flex-col items-start p-3 bg-background hover:bg-surface-hover border border-subtle hover:border-brand/50 rounded-2xl text-left transition cursor-pointer"
+                className="p-4 bg-surface hover:bg-slate-50 dark:hover:bg-slate-800/60 border border-slate-300 dark:border-slate-700 hover:border-slate-400 dark:hover:border-slate-500 rounded-2xl text-left transition-all duration-150 cursor-pointer group shadow-2xs"
               >
-                <span className="text-xs font-bold text-primary-muted">Dr. Alice Smith</span>
-                <span className="text-xs text-tertiary font-mono mt-1">alice@university.edu</span>
+                <div className="font-bold text-primary text-sm tracking-tight group-hover:text-brand transition-colors">
+                  Dr. Alice Smith
+                </div>
+                <div className="text-xs font-mono text-slate-500 dark:text-slate-400 mt-1">
+                  alice@university.edu
+                </div>
               </button>
 
+              {/* Board Auditor / Coordinator */}
               <button
+                type="button"
                 onClick={() => handleQuickLogin('auditor@university.edu')}
-                className="flex flex-col items-start p-3 bg-background hover:bg-surface-hover border border-subtle hover:border-brand/50 rounded-2xl text-left transition cursor-pointer"
+                className="p-4 bg-surface hover:bg-slate-50 dark:hover:bg-slate-800/60 border border-slate-300 dark:border-slate-700 hover:border-slate-400 dark:hover:border-slate-500 rounded-2xl text-left transition-all duration-150 cursor-pointer group shadow-2xs"
               >
-                <span className="text-xs font-bold text-primary-muted">Board Auditor / Coordinator</span>
-                <span className="text-xs text-tertiary font-mono mt-1">auditor@university.edu</span>
+                <div className="font-bold text-primary text-sm tracking-tight group-hover:text-brand transition-colors">
+                  Board Auditor / Coordinator
+                </div>
+                <div className="text-xs font-mono text-slate-500 dark:text-slate-400 mt-1">
+                  auditor@university.edu
+                </div>
               </button>
+            </div>
+
+            {/* EXPANDABLE SECTION FOR MANUAL PASSWORD LOGIN & EWU FACULTY */}
+            <div className="pt-2 border-t border-slate-200 dark:border-slate-800">
+              <button
+                type="button"
+                onClick={() => setShowManualLogin(!showManualLogin)}
+                className="w-full flex items-center justify-between text-2xs font-medium text-tertiary hover:text-primary transition py-1 cursor-pointer"
+              >
+                <span className="flex items-center gap-1.5">
+                  <KeyRound className="w-3.5 h-3.5 text-brand" /> Sign in with Email / Password
+                </span>
+                <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${showManualLogin ? 'rotate-180 text-brand' : ''}`} />
+              </button>
+
+              {showManualLogin && (
+                <div className="mt-3 space-y-4 animate-fade-in pt-1">
+                  {/* SIGN IN FORM */}
+                  {authMode === 'login' ? (
+                    <form onSubmit={handleEmailPasswordLogin} className="space-y-3.5">
+                      <div>
+                        <label htmlFor="login-email" className="block text-xs font-medium text-secondary mb-1">
+                          University Email
+                        </label>
+                        <div className="relative">
+                          <span className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-quaternary text-xs">
+                            @
+                          </span>
+                          <input
+                            id="login-email"
+                            type="email"
+                            required
+                            value={loginEmail}
+                            onChange={(e) => setLoginEmail(e.target.value)}
+                            placeholder="instructor@ewubd.edu"
+                            className="w-full bg-background border border-subtle rounded-xl py-2 pl-8 pr-3 text-primary placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-brand focus:border-transparent text-xs transition"
+                          />
+                        </div>
+                      </div>
+
+                      <div>
+                        <label htmlFor="login-password" className="block text-xs font-medium text-secondary mb-1">
+                          Password
+                        </label>
+                        <div className="relative">
+                          <span className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-quaternary">
+                            <KeyRound className="w-3.5 h-3.5" />
+                          </span>
+                          <input
+                            id="login-password"
+                            type={showPassword ? 'text' : 'password'}
+                            required
+                            value={loginPassword}
+                            onChange={(e) => setLoginPassword(e.target.value)}
+                            placeholder="Enter password"
+                            className="w-full bg-background border border-subtle rounded-xl py-2 pl-8 pr-9 text-primary placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-brand focus:border-transparent text-xs transition"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setShowPassword(!showPassword)}
+                            className="absolute inset-y-0 right-0 pr-2.5 flex items-center text-quaternary hover:text-primary transition cursor-pointer"
+                            title={showPassword ? 'Hide password' : 'Show password'}
+                          >
+                            {showPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                          </button>
+                        </div>
+                      </div>
+
+                      <button
+                        type="submit"
+                        disabled={isAuthSubmitting}
+                        className="w-full flex items-center justify-center gap-1.5 bg-brand hover:bg-brand-hover text-white font-semibold py-2.5 px-4 rounded-xl transition shadow-md shadow-brand/15 cursor-pointer text-xs disabled:opacity-50"
+                      >
+                        {isAuthSubmitting ? <Clock className="w-3.5 h-3.5 animate-spin" /> : <LogIn className="w-3.5 h-3.5" />}
+                        {isAuthSubmitting ? 'Verifying...' : 'Sign In with Password'}
+                      </button>
+
+                      <div className="text-center pt-1 text-xs text-tertiary">
+                        Don&apos;t have an account?{' '}
+                        <button
+                          type="button"
+                          onClick={() => { setAuthMode('register'); setLoginError(''); }}
+                          className="text-brand hover:text-brand-hover font-semibold hover:underline cursor-pointer"
+                        >
+                          Create one
+                        </button>
+                      </div>
+                    </form>
+                  ) : (
+                    /* CREATE ACCOUNT FORM */
+                    <form onSubmit={handleRegister} className="space-y-3">
+                      <div>
+                        <label htmlFor="reg-name" className="block text-xs font-medium text-secondary mb-1">
+                          Full Name
+                        </label>
+                        <input
+                          id="reg-name"
+                          type="text"
+                          required
+                          value={registerName}
+                          onChange={(e) => setRegisterName(e.target.value)}
+                          placeholder="e.g. Dr. Jane Doe"
+                          className="w-full bg-background border border-subtle rounded-xl py-2 px-3 text-primary placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-brand focus:border-transparent text-xs transition"
+                        />
+                      </div>
+
+                      <div>
+                        <label htmlFor="reg-email" className="block text-xs font-medium text-secondary mb-1">
+                          University Email
+                        </label>
+                        <input
+                          id="reg-email"
+                          type="email"
+                          required
+                          value={registerEmail}
+                          onChange={(e) => setRegisterEmail(e.target.value)}
+                          placeholder="e.g. jane@ewubd.edu"
+                          className="w-full bg-background border border-subtle rounded-xl py-2 px-3 text-primary placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-brand focus:border-transparent text-xs transition"
+                        />
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                        <div>
+                          <label htmlFor="reg-role" className="block text-xs font-medium text-secondary mb-1">
+                            Role
+                          </label>
+                          <select
+                            id="reg-role"
+                            value={registerRole}
+                            onChange={(e) => setRegisterRole(e.target.value as UserRole)}
+                            className="w-full bg-background border border-subtle rounded-xl py-2 px-2.5 text-primary focus:outline-none focus:ring-2 focus:ring-brand focus:border-transparent text-xs transition"
+                          >
+                            <option value={UserRole.INSTRUCTOR}>Course Instructor</option>
+                            <option value={UserRole.DEPT_HEAD}>Department Head</option>
+                            <option value={UserRole.AUDITOR}>Auditor</option>
+                          </select>
+                        </div>
+
+                        <div>
+                          <label htmlFor="reg-dept" className="block text-xs font-medium text-secondary mb-1">
+                            Department
+                          </label>
+                          <input
+                            id="reg-dept"
+                            type="text"
+                            value={registerDept}
+                            onChange={(e) => setRegisterDept(e.target.value)}
+                            placeholder="e.g. CSE"
+                            className="w-full bg-background border border-subtle rounded-xl py-2 px-2.5 text-primary placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-brand focus:border-transparent text-xs transition"
+                          />
+                        </div>
+                      </div>
+
+                      <div>
+                        <label htmlFor="reg-password" className="block text-xs font-medium text-secondary mb-1">
+                          Password <span className="text-3xs text-quaternary">(min 6 chars)</span>
+                        </label>
+                        <div className="relative">
+                          <input
+                            id="reg-password"
+                            type={showPassword ? 'text' : 'password'}
+                            required
+                            minLength={6}
+                            value={registerPassword}
+                            onChange={(e) => setRegisterPassword(e.target.value)}
+                            placeholder="••••••••"
+                            className="w-full bg-background border border-subtle rounded-xl py-2 pl-3 pr-9 text-primary placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-brand focus:border-transparent text-xs transition"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setShowPassword(!showPassword)}
+                            className="absolute inset-y-0 right-0 pr-2.5 flex items-center text-quaternary hover:text-primary transition cursor-pointer"
+                          >
+                            {showPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                          </button>
+                        </div>
+                      </div>
+
+                      <button
+                        type="submit"
+                        disabled={isAuthSubmitting}
+                        className="w-full flex items-center justify-center gap-1.5 bg-brand hover:bg-brand-hover text-white font-semibold py-2.5 px-4 rounded-xl transition shadow-md shadow-brand/15 cursor-pointer text-xs disabled:opacity-50 mt-1"
+                      >
+                        {isAuthSubmitting ? <Clock className="w-3.5 h-3.5 animate-spin" /> : <UserPlus className="w-3.5 h-3.5" />}
+                        {isAuthSubmitting ? 'Creating Account...' : 'Register & Sign In'}
+                      </button>
+
+                      <div className="text-center pt-1 text-xs text-tertiary">
+                        Already have an account?{' '}
+                        <button
+                          type="button"
+                          onClick={() => { setAuthMode('login'); setLoginError(''); }}
+                          className="text-brand hover:text-brand-hover font-semibold hover:underline cursor-pointer"
+                        >
+                          Sign in
+                        </button>
+                      </div>
+                    </form>
+                  )}
+
+                  {/* Data Entry Assistant Quick Login */}
+                  <div className="pt-2 border-t border-divider">
+                    <button
+                      type="button"
+                      onClick={() => handleQuickLogin('data-entry@ewubd.edu')}
+                      className="w-full flex items-center justify-between p-2.5 bg-brand/5 hover:bg-brand/10 border border-brand/20 hover:border-brand/40 rounded-xl text-left transition cursor-pointer text-2xs"
+                    >
+                      <div>
+                        <div className="font-semibold text-brand flex items-center gap-1">⚡ Data Entry Assistant</div>
+                        <div className="text-quaternary font-mono text-3xs mt-0.5">Upload access for all courses</div>
+                      </div>
+                      <ArrowRight className="w-3 h-3 text-brand" />
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>
 
         {/* Footer */}
-        <div className="text-center text-xs text-quaternary font-mono">
+        <div className="text-center text-xs text-quaternary font-mono mt-4">
           Course File Archive • University Portfolio & Accreditation Management
         </div>
       </div>
@@ -2372,41 +2744,41 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
       )}
 
       {/* Header Navbar */}
-      <header className="bg-surface border-b border-subtle px-4 sm:px-6 py-3.5 flex items-center justify-between sticky top-0 z-40 shadow-sm min-h-[64px] shrink-0">
-        <div className="flex items-center gap-2 sm:gap-3">
+      <header className="bg-surface border-b border-subtle px-3 sm:px-6 py-2.5 sm:py-3.5 flex items-center justify-between sticky top-0 z-40 shadow-sm min-h-[58px] sm:min-h-[64px] shrink-0">
+        <div className="flex items-center gap-2 sm:gap-3 min-w-0">
           {/* Mobile navigation toggle */}
           <button
             type="button"
             onClick={() => setShowMobileMenu(prev => !prev)}
             aria-label="Toggle navigation menu"
             aria-expanded={showMobileMenu}
-            className="md:hidden p-2 text-tertiary hover:text-primary rounded-xl min-h-[44px] min-w-[44px] flex items-center justify-center hover:bg-surface-hover transition cursor-pointer"
+            className="md:hidden p-2 text-tertiary hover:text-primary rounded-xl min-h-[40px] min-w-[40px] flex items-center justify-center hover:bg-surface-hover transition cursor-pointer shrink-0"
           >
             {showMobileMenu ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
           </button>
 
-          <div className="w-10 h-10 rounded-xl bg-brand flex items-center justify-center text-white font-bold shadow-sm">
-            <span className="text-sm">CFA</span>
+          <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-brand flex items-center justify-center text-white font-bold shadow-sm shrink-0">
+            <span className="text-xs sm:text-sm">CFA</span>
           </div>
-          <div>
-            <h1 className="text-lg font-bold leading-tight text-primary">
+          <div className="min-w-0">
+            <h1 className="text-sm sm:text-lg font-bold leading-tight text-primary truncate">
               Course File Archive
             </h1>
-            <p className="text-xs uppercase tracking-wider text-quaternary font-semibold">UNIVERSITY COURSE ARCHIVE MANAGEMENT</p>
+            <p className="text-[10px] sm:text-xs uppercase tracking-wider text-quaternary font-semibold truncate hidden xs:block">UNIVERSITY COURSE ARCHIVE MANAGEMENT</p>
           </div>
         </div>
 
         {/* User Info & Actions */}
-        <div className="flex items-center gap-2 sm:gap-4">
+        <div className="flex items-center gap-1.5 sm:gap-4 shrink-0">
 
           <button
             type="button"
             onClick={toggleTheme}
-            className="p-2.5 text-tertiary hover:text-primary transition rounded-full hover:bg-surface-hover shrink-0 min-h-[44px] min-w-[44px] flex items-center justify-center cursor-pointer"
+            className="p-2 sm:p-2.5 text-tertiary hover:text-primary transition rounded-full hover:bg-surface-hover shrink-0 min-h-[38px] min-w-[38px] sm:min-h-[44px] sm:min-w-[44px] flex items-center justify-center cursor-pointer"
             aria-label="Toggle dark/light theme"
             title="Toggle Theme"
           >
-            {theme === 'dark' ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
+            {theme === 'dark' ? <Sun className="w-4 h-4 sm:w-5 sm:h-5" /> : <Moon className="w-4 h-4 sm:w-5 sm:h-5" />}
           </button>
 
           {/* Notification Bell */}
@@ -2414,13 +2786,13 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
             <button
               type="button"
               onClick={() => setShowNotificationDrawer(prev => !prev)}
-              className="relative p-2.5 text-tertiary hover:text-primary transition rounded-full hover:bg-surface-hover shrink-0 cursor-pointer min-h-[44px] min-w-[44px] flex items-center justify-center"
+              className="relative p-2 sm:p-2.5 text-tertiary hover:text-primary transition rounded-full hover:bg-surface-hover shrink-0 cursor-pointer min-h-[38px] min-w-[38px] sm:min-h-[44px] sm:min-w-[44px] flex items-center justify-center"
               aria-label={`Notifications, ${unreadNotifCount} unread`}
               title="Notifications"
             >
-              <Bell className="w-5 h-5" />
+              <Bell className="w-4 h-4 sm:w-5 sm:h-5" />
               {unreadNotifCount > 0 && (
-                <span className="absolute top-1.5 right-1.5 w-4 h-4 bg-rose-500 text-white rounded-full text-xs font-bold flex items-center justify-center animate-pulse">
+                <span className="absolute top-1 right-1 sm:top-1.5 sm:right-1.5 w-4 h-4 bg-rose-500 text-white rounded-full text-[10px] sm:text-xs font-bold flex items-center justify-center animate-pulse">
                   {unreadNotifCount > 9 ? '9+' : unreadNotifCount}
                 </span>
               )}
@@ -2432,7 +2804,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                 role="dialog"
                 aria-modal="true"
                 aria-label="Notification Center"
-                className="absolute right-0 mt-3 w-[calc(100vw-2rem)] sm:w-96 max-w-sm bg-surface text-primary border border-subtle shadow-2xl rounded-2xl p-4 z-50 animate-slide-in"
+                className="absolute right-0 mt-3 w-[calc(100vw-1.5rem)] sm:w-96 max-w-sm bg-surface text-primary border border-subtle shadow-2xl rounded-2xl p-4 z-50 animate-slide-in"
               >
                 <div className="flex items-center justify-between pb-3 border-b border-subtle">
                   <div className="flex items-center gap-2">
@@ -2527,7 +2899,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
           <button
             type="button"
             onClick={() => openRoleManual(currentUser.role)}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-surface hover:bg-surface-hover text-secondary hover:text-brand border border-subtle rounded-xl text-xs font-semibold transition cursor-pointer shadow-xs"
+            className="inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 bg-surface hover:bg-surface-hover text-secondary hover:text-brand border border-subtle rounded-xl text-xs font-semibold transition cursor-pointer shadow-xs"
             title="Open Role Operating Manual & SOP Guide"
           >
             <HelpCircle className="w-4 h-4 text-brand" />
@@ -2536,33 +2908,33 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
 
           <div 
             onClick={() => openRoleManual(currentUser.role)}
-            className="flex items-center gap-3 border-l border-subtle pl-4 h-9 cursor-pointer hover:opacity-85 transition"
+            className="flex items-center gap-2 sm:gap-3 border-l border-subtle pl-2 sm:pl-4 h-9 cursor-pointer hover:opacity-85 transition"
             title="Click to view your Role Manual & Responsibilities"
           >
-            <div className="text-right">
-              <p className="text-xs font-bold text-primary">{currentUser.name}</p>
-              <p className="text-xs text-tertiary font-semibold">
+            <div className="hidden md:block text-right">
+              <p className="text-xs font-bold text-primary truncate max-w-[130px]">{currentUser.name}</p>
+              <p className="text-[11px] text-tertiary font-semibold truncate max-w-[130px]">
                 {currentUser.role === UserRole.ADMIN ? 'System Administrator' :
                  currentUser.role === UserRole.DEPT_HEAD ? 'Lead Reviewer (Dept Head)' :
-                 currentUser.role === UserRole.AUDITOR ? 'Board Auditor / Coordinator' :
-                 'Lead Instructor (Faculty)'}
+                 currentUser.role === UserRole.AUDITOR ? 'Board Auditor' :
+                 'Lead Instructor'}
               </p>
             </div>
-            {currentUser.avatarUrl ? (
-              <img src={currentUser.avatarUrl} alt={currentUser.name} className="w-9 h-9 rounded-full bg-border-subtle shadow-sm" />
+            {currentUser.avatarUrl && !currentUser.avatarUrl.includes('unsplash.com') ? (
+              <img src={currentUser.avatarUrl} alt={currentUser.name} className="w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-border-subtle shadow-sm object-cover" />
             ) : (
-              <div className="w-9 h-9 rounded-full bg-surface-hover flex items-center justify-center border border-subtle font-bold text-brand text-xs shadow-sm">
-                {currentUser.name.split(' ').map(n => n[0]).join('')}
+              <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-gradient-to-br from-indigo-500/20 to-purple-500/30 text-brand border border-brand/20 flex items-center justify-center font-bold text-xs shadow-sm shrink-0">
+                {currentUser.name ? currentUser.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase() : 'U'}
               </div>
             )}
           </div>
 
           <button
             onClick={handleLogout}
-            className="p-2 hover:bg-surface-hover text-quaternary hover:text-primary-muted rounded-lg transition cursor-pointer"
+            className="p-1.5 sm:p-2 hover:bg-surface-hover text-quaternary hover:text-primary-muted rounded-lg transition cursor-pointer"
             title="Sign Out"
           >
-            <LogOut className="w-5 h-5" />
+            <LogOut className="w-4 h-4 sm:w-5 sm:h-5" />
           </button>
         </div>
       </header>
@@ -2607,6 +2979,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                   setSelectedOffering(null);
                   setSelectedYear(null);
                   setSelectedTerm(null);
+                  setShowMobileMenu(false);
                 }}
                 className={`w-full flex items-center justify-between px-3 py-2.5 min-h-[44px] rounded-lg text-xs font-semibold transition cursor-pointer ${
                   activeTab === 'courses' ? 'bg-white/10 text-white border border-white/10' : 'text-quaternary hover:text-white hover:bg-white/5'
@@ -2620,7 +2993,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
 
               {(currentUser.role === UserRole.INSTRUCTOR || currentUser.role === UserRole.ADMIN || currentUser.role === UserRole.DEPT_HEAD || offerings.some(o => o.instructorId === currentUser.id)) && (
                 <button
-                  onClick={() => { setActiveTab('desk'); setSelectedOffering(null); }}
+                  onClick={() => { setActiveTab('desk'); setSelectedOffering(null); setShowMobileMenu(false); }}
                   className={`w-full flex items-center justify-between px-3 py-2.5 min-h-[44px] rounded-lg text-xs font-semibold transition cursor-pointer ${
                     activeTab === 'desk' ? 'bg-white/10 text-white border border-white/10' : 'text-quaternary hover:text-white hover:bg-white/5'
                   }`}
@@ -2636,7 +3009,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
 
               {(currentUser.role === UserRole.DEPT_HEAD || currentUser.role === UserRole.ADMIN || currentUser.role === UserRole.AUDITOR) && (
                 <button
-                  onClick={() => { setActiveTab('review'); setSelectedOffering(null); }}
+                  onClick={() => { setActiveTab('review'); setSelectedOffering(null); setShowMobileMenu(false); }}
                   className={`w-full flex items-center justify-between px-3 py-2.5 min-h-[44px] rounded-lg text-xs font-semibold transition cursor-pointer ${
                     activeTab === 'review' ? 'bg-white/10 text-white border border-white/10' : 'text-quaternary hover:text-white hover:bg-white/5'
                   }`}
@@ -2661,7 +3034,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
               )}
 
               <button
-                onClick={() => { setActiveTab('archive'); setSelectedOffering(null); }}
+                onClick={() => { setActiveTab('archive'); setSelectedOffering(null); setShowMobileMenu(false); }}
                 className={`w-full flex items-center justify-between px-3 py-2.5 min-h-[44px] rounded-lg text-xs font-semibold transition cursor-pointer ${
                   activeTab === 'archive' ? 'bg-white/10 text-white border border-white/10' : 'text-quaternary hover:text-white hover:bg-white/5'
                 }`}
@@ -2672,21 +3045,23 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                 <span className="bg-white/10 text-quaternary-light px-1.5 py-0.5 rounded text-xs font-mono">{documents.length}</span>
               </button>
 
-              <button
-                onClick={() => { setActiveTab('ledger'); setSelectedOffering(null); }}
-                className={`w-full flex items-center justify-between px-3 py-2.5 min-h-[44px] rounded-lg text-xs font-semibold transition cursor-pointer ${
-                  activeTab === 'ledger' ? 'bg-white/10 text-white border border-white/10' : 'text-quaternary hover:text-white hover:bg-white/5'
-                }`}
-              >
-                <span className="flex items-center gap-2.5">
-                  <Activity className="w-4 h-4" /> Activity Log
-                </span>
-                <span className="bg-white/10 text-quaternary-light px-1.5 py-0.5 rounded text-xs font-mono">{auditLogs.length}</span>
-              </button>
+              {currentUser.role === UserRole.ADMIN && (
+                <button
+                  onClick={() => { setActiveTab('ledger'); setSelectedOffering(null); setShowMobileMenu(false); }}
+                  className={`w-full flex items-center justify-between px-3 py-2.5 min-h-[44px] rounded-lg text-xs font-semibold transition cursor-pointer ${
+                    activeTab === 'ledger' ? 'bg-white/10 text-white border border-white/10' : 'text-quaternary hover:text-white hover:bg-white/5'
+                  }`}
+                >
+                  <span className="flex items-center gap-2.5">
+                    <Activity className="w-4 h-4" /> Activity Log
+                  </span>
+                  <span className="bg-white/10 text-quaternary-light px-1.5 py-0.5 rounded text-xs font-mono">{auditLogs.length}</span>
+                </button>
+              )}
 
               {currentUser.role === UserRole.ADMIN && (
                 <button
-                  onClick={() => { setActiveTab('users'); setSelectedOffering(null); }}
+                  onClick={() => { setActiveTab('users'); setSelectedOffering(null); setShowMobileMenu(false); }}
                   className={`w-full flex items-center justify-between px-3 py-2.5 min-h-[44px] rounded-lg text-xs font-semibold transition cursor-pointer ${
                     activeTab === 'users' ? 'bg-white/10 text-white border border-white/10' : 'text-quaternary hover:text-white hover:bg-white/5'
                   }`}
@@ -2700,7 +3075,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
 
               {currentUser.role === UserRole.ADMIN && (
                 <button
-                  onClick={() => { setActiveTab('categories'); setSelectedOffering(null); }}
+                  onClick={() => { setActiveTab('categories'); setSelectedOffering(null); setShowMobileMenu(false); }}
                   className={`w-full flex items-center justify-between px-3 py-2.5 min-h-[44px] rounded-lg text-xs font-semibold transition cursor-pointer ${
                     activeTab === 'categories' ? 'bg-white/10 text-white border border-white/10' : 'text-quaternary hover:text-white hover:bg-white/5'
                   }`}
@@ -2716,7 +3091,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
 
               {(currentUser.role === UserRole.ADMIN || currentUser.role === UserRole.DEPT_HEAD) && (
                 <button
-                  onClick={() => { setActiveTab('trash'); setSelectedOffering(null); }}
+                  onClick={() => { setActiveTab('trash'); setSelectedOffering(null); setShowMobileMenu(false); }}
                   className={`w-full flex items-center justify-between px-3 py-2.5 min-h-[44px] rounded-lg text-xs font-semibold transition cursor-pointer ${
                     activeTab === 'trash' ? 'bg-white/10 text-white border border-white/10' : 'text-quaternary hover:text-white hover:bg-white/5'
                   }`}
@@ -2764,7 +3139,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
         </aside>
 
         {/* Main Content Area */}
-        <main className="flex-grow p-6 md:p-8 overflow-y-auto max-w-7xl w-full mx-auto">
+        <main className="flex-grow p-3.5 sm:p-6 md:p-8 overflow-y-auto max-w-7xl w-full mx-auto overflow-x-hidden">
           
           {currentUser.pendingApproval && (
             <div className="bg-gradient-to-r from-amber-500 to-orange-600 text-white rounded-2xl p-5 mb-6 border border-amber-400/20 shadow-lg shadow-amber-500/10 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
@@ -2799,10 +3174,10 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                     </p>
                   </div>
                   {currentUser.role === UserRole.ADMIN && (
-                    <div className="flex items-center gap-3">
+                    <div className="flex flex-wrap items-center gap-2 sm:gap-3">
                       <button
                         onClick={() => setShowAddCourse(true)}
-                        className="inline-flex items-center gap-2 bg-surface hover:bg-background text-secondary font-semibold px-4 py-2.5 min-h-[44px] rounded-xl text-xs transition border border-subtle shadow-sm cursor-pointer"
+                        className="inline-flex items-center gap-2 bg-surface hover:bg-background text-secondary font-semibold px-3.5 sm:px-4 py-2 sm:py-2.5 min-h-[40px] sm:min-h-[44px] rounded-xl text-xs transition border border-subtle shadow-sm cursor-pointer"
                       >
                         <Plus className="w-4 h-4 text-tertiary" /> Register Course
                       </button>
@@ -2814,7 +3189,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                           }
                           setShowAddOffering(true);
                         }}
-                        className="inline-flex items-center gap-2 bg-brand hover:bg-brand-hover text-white font-semibold px-4 py-2.5 min-h-[44px] rounded-xl text-xs transition shadow-md shadow-indigo-600/10 cursor-pointer"
+                        className="inline-flex items-center gap-2 bg-brand hover:bg-brand-hover text-white font-semibold px-3.5 sm:px-4 py-2 sm:py-2.5 min-h-[40px] sm:min-h-[44px] rounded-xl text-xs transition shadow-md shadow-indigo-600/10 cursor-pointer"
                       >
                         <Plus className="w-4 h-4" /> Create Term Offering
                       </button>
@@ -2825,7 +3200,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                           }
                           setShowBulkUploadModal(true);
                         }}
-                        className="inline-flex items-center gap-2 bg-brand/10 hover:bg-brand/20 text-brand-bold font-semibold px-4 py-2.5 min-h-[44px] rounded-xl text-xs transition border border-brand/20 shadow-sm cursor-pointer"
+                        className="inline-flex items-center gap-2 bg-brand/10 hover:bg-brand/20 text-brand-bold font-semibold px-3.5 sm:px-4 py-2 sm:py-2.5 min-h-[40px] sm:min-h-[44px] rounded-xl text-xs transition border border-brand/20 shadow-sm cursor-pointer"
                       >
                         <UploadCloud className="w-4 h-4 text-brand" /> Bulk Upload Files
                       </button>
@@ -3462,33 +3837,33 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
 
                     return (
                       <div className="space-y-6">
-                        <div className="bg-slate-900 text-white rounded-2xl p-6 border border-slate-800 shadow-xl space-y-6">
-                          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                        <div className="bg-slate-900 text-white rounded-2xl p-4 sm:p-6 border border-slate-800 shadow-xl space-y-5 sm:space-y-6">
+                          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
                             <div>
-                              <div className="flex items-center gap-2">
+                              <div className="flex items-center gap-2 flex-wrap">
                                 <span className="font-mono text-xs font-bold bg-brand/20 text-brand-muted px-3 py-1 rounded-xl border border-brand/20">
                                   {selectedOffering.course?.code}
                                 </span>
-                                <h3 className="text-lg font-bold">{selectedOffering.course?.title}</h3>
+                                <h3 className="text-base sm:text-lg font-bold">{selectedOffering.course?.title}</h3>
                               </div>
                               <p className="text-xs text-slate-300 mt-2">
                                 Academic Session: <span className="font-semibold text-white">{selectedOffering.term} {selectedOffering.academicYear}</span> • Section: <span className="font-semibold text-white">{selectedOffering.section}</span> • Department: <span className="font-semibold text-slate-200">{selectedOffering.course?.department}</span>
                               </p>
                             </div>
 
-                            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
-                              <div className="flex items-center gap-2.5 bg-white/5 border border-white/10 px-3.5 py-1.5 rounded-xl">
-                                <User className="w-4 h-4 text-indigo-400" />
-                                <div className="text-left">
-                                  <p className="text-xs text-brand-muted font-bold tracking-wider uppercase">INSTRUCTOR</p>
-                                  <p className="text-xs font-semibold text-white">{selectedOffering.instructor?.name || 'Unassigned'}</p>
+                            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 sm:gap-3 flex-wrap">
+                              <div className="flex items-center gap-2.5 bg-white/5 border border-white/10 px-3 sm:px-3.5 py-1.5 rounded-xl">
+                                <User className="w-4 h-4 text-indigo-400 shrink-0" />
+                                <div className="text-left min-w-0">
+                                  <p className="text-[10px] sm:text-xs text-brand-muted font-bold tracking-wider uppercase">INSTRUCTOR</p>
+                                  <p className="text-xs font-semibold text-white truncate">{selectedOffering.instructor?.name || 'Unassigned'}</p>
                                 </div>
                               </div>
 
-                              <div className="flex items-center gap-2.5 bg-white/5 border border-white/10 px-3.5 py-1.5 rounded-xl">
-                                <Eye className="w-4 h-4 text-amber-400" />
-                                <div className="text-left">
-                                  <p className="text-xs text-amber-300 font-bold tracking-wider uppercase">BOARD AUDITOR / COORDINATOR</p>
+                              <div className="flex items-center gap-2.5 bg-white/5 border border-white/10 px-3 sm:px-3.5 py-1.5 rounded-xl">
+                                <Eye className="w-4 h-4 text-amber-400 shrink-0" />
+                                <div className="text-left min-w-0">
+                                  <p className="text-[10px] sm:text-xs text-amber-300 font-bold tracking-wider uppercase">BOARD AUDITOR</p>
                                   {currentUser.role === UserRole.ADMIN ? (
                                     <select
                                       value={selectedOffering.auditorId || ''}
@@ -3512,9 +3887,9 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                                           showNotification('Network error assigning auditor', 'error');
                                         }
                                       }}
-                                      className="bg-inverse-surface border border-slate-700 text-white rounded px-2 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer mt-0.5"
+                                      className="bg-inverse-surface border border-slate-700 text-white rounded px-2 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer mt-0.5 max-w-[150px] truncate"
                                     >
-                                      <option value="">-- Assign Auditor / Coordinator --</option>
+                                      <option value="">-- Assign Auditor --</option>
                                       {usersList
                                         .filter(u => u.role === UserRole.AUDITOR)
                                         .map(u => (
@@ -3522,42 +3897,21 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                                         ))}
                                     </select>
                                   ) : (
-                                    <p className="text-xs font-semibold text-white">
+                                    <p className="text-xs font-semibold text-white truncate">
                                       {usersList.find(u => u.id === selectedOffering.auditorId)?.name || 'Unassigned'}
                                     </p>
                                   )}
                                 </div>
                               </div>
 
-                              <div className="flex items-center gap-2">
-                                {currentUser && (currentUser.id === selectedOffering.instructorId || currentUser.role === UserRole.ADMIN || currentUser.role === UserRole.DEPT_HEAD) && (
-                                  <button
-                                    onClick={() => handlePopulateSamples(selectedOffering.id)}
-                                    disabled={isPopulatingSamples}
-                                    className="bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 hover:from-indigo-500 hover:to-pink-500 text-white border border-purple-300/40 rounded-xl px-3.5 py-2 text-xs font-bold flex items-center gap-1.5 shadow-md shadow-purple-950/40 transition hover:scale-[1.02] cursor-pointer disabled:opacity-50"
-                                    title="Instantly generate and upload sample files for all 16 checklist slots and student scripts for rapid demo"
-                                  >
-                                    {isPopulatingSamples ? (
-                                      <>
-                                        <Clock className="w-4 h-4 animate-spin text-purple-200" />
-                                        <span>Populating 16 Files...</span>
-                                      </>
-                                    ) : (
-                                      <>
-                                        <Sparkles className="w-4 h-4 text-amber-300" />
-                                        <span>⚡ Load 16 Sample Files</span>
-                                      </>
-                                    )}
-                                  </button>
-                                )}
-
+                              <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
                                 {currentUser && (currentUser.role === UserRole.INSTRUCTOR || currentUser.role === UserRole.ADMIN) && (
                                   <button
                                     onClick={() => {
                                       setGlobalBulkOfferingId(selectedOffering.id);
                                       setShowBulkUploadModal(true);
                                     }}
-                                    className="bg-brand/20 hover:bg-brand/30 text-white border border-brand/40 rounded-xl px-4 py-2 text-xs font-semibold flex items-center gap-2 shadow-sm transition cursor-pointer"
+                                    className="bg-brand/20 hover:bg-brand/30 text-white border border-brand/40 rounded-xl px-3.5 sm:px-4 py-2 text-xs font-semibold flex items-center gap-1.5 sm:gap-2 shadow-sm transition cursor-pointer"
                                   >
                                     <UploadCloud className="w-4 h-4 text-brand-muted" /> Bulk Upload Files
                                   </button>
@@ -3567,7 +3921,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                                   <button
                                     onClick={() => handleExportPackage(selectedOffering, offDocs, presentCount)}
                                     disabled={isExportingId === selectedOffering.id}
-                                    className="bg-brand hover:bg-brand-subtle0 text-white border border-brand rounded-xl px-4 py-2 text-xs font-semibold flex items-center gap-2 shadow-sm transition disabled:opacity-50"
+                                    className="bg-brand hover:bg-brand-subtle0 text-white border border-brand rounded-xl px-3.5 sm:px-4 py-2 text-xs font-semibold flex items-center gap-1.5 sm:gap-2 shadow-sm transition disabled:opacity-50"
                                   >
                                     {isExportingId === selectedOffering.id ? <Clock className="w-4 h-4 animate-spin" /> : <FileUp className="w-4 h-4" />} {isExportingId === selectedOffering.id ? 'Exporting...' : 'Export Package'}
                                   </button>
@@ -3579,9 +3933,9 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                                     onClick={() => openSignatureModal('submit')}
                                     disabled={presentCount < 16}
                                     title={presentCount < 16 ? "All 16 core items must be present to submit." : ""}
-                                    className="bg-indigo-600 hover:bg-indigo-500 text-white border border-indigo-700 rounded-xl px-4 py-2 text-xs font-semibold flex items-center gap-2 shadow-sm transition disabled:opacity-50 cursor-pointer"
+                                    className="bg-indigo-600 hover:bg-indigo-500 text-white border border-indigo-700 rounded-xl px-3.5 sm:px-4 py-2 text-xs font-semibold flex items-center gap-1.5 sm:gap-2 shadow-sm transition disabled:opacity-50 cursor-pointer"
                                   >
-                                    <Shield className="w-4 h-4" /> {selectedOffering.submissionStatus === 'submitted' ? 'Update Submission Signature' : 'Sign & Submit Portfolio'}
+                                    <Shield className="w-4 h-4" /> {selectedOffering.submissionStatus === 'submitted' ? 'Update Submission' : 'Sign & Submit Portfolio'}
                                   </button>
                                 )}
 
@@ -3609,13 +3963,13 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                                           true
                                         );
                                       }}
-                                      className="bg-red-600/20 text-red-500 hover:bg-red-600/30 border border-red-500/30 rounded-xl px-4 py-2 text-xs font-semibold flex items-center gap-2 shadow-sm transition cursor-pointer"
+                                      className="bg-red-600/20 text-red-500 hover:bg-red-600/30 border border-red-500/30 rounded-xl px-3.5 py-2 text-xs font-semibold flex items-center gap-1.5 shadow-sm transition cursor-pointer"
                                     >
                                       <XCircle className="w-4 h-4" /> Reject
                                     </button>
                                     <button
                                       onClick={() => openSignatureModal('approve')}
-                                      className="bg-emerald-600 hover:bg-emerald-500 text-white border border-emerald-700 rounded-xl px-4 py-2 text-xs font-semibold flex items-center gap-2 shadow-sm transition cursor-pointer"
+                                      className="bg-emerald-600 hover:bg-emerald-500 text-white border border-emerald-700 rounded-xl px-3.5 py-2 text-xs font-semibold flex items-center gap-1.5 shadow-sm transition cursor-pointer"
                                     >
                                       <CheckCircle className="w-4 h-4" /> Endorse & Sign
                                     </button>
@@ -3688,16 +4042,6 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                                   ? '🎉 Beautiful! All 16 course folder elements are present and compiled!' 
                                   : 'Ensure all 16 core course folder categories are populated for approval.'}
                               </p>
-                              {presentCount < 16 && currentUser && (currentUser.id === selectedOffering.instructorId || currentUser.role === UserRole.ADMIN || currentUser.role === UserRole.DEPT_HEAD) && (
-                                <button
-                                  onClick={() => handlePopulateSamples(selectedOffering.id)}
-                                  disabled={isPopulatingSamples}
-                                  className="mt-2 inline-flex items-center gap-1.5 bg-amber-400/20 hover:bg-amber-400/30 text-amber-200 border border-amber-400/40 rounded-xl px-3 py-1.5 text-xs font-bold transition shadow-sm cursor-pointer disabled:opacity-50"
-                                >
-                                  {isPopulatingSamples ? <Clock className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5 text-amber-300" />}
-                                  {isPopulatingSamples ? 'Loading All 16 Files...' : '⚡ Quick Demo: Populate All 16 Files & Sub-slots'}
-                                </button>
-                              )}
                             </div>
                             <div className="w-full md:w-64 space-y-2 shrink-0">
                               <div className="flex justify-between items-center text-xs font-mono text-indigo-300 font-semibold">
@@ -3763,6 +4107,34 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                             </div>
 
                             <div className="flex flex-wrap items-center gap-2">
+                              {/* 1-Col vs 2-Col View Mode Toggle */}
+                              <div className="flex items-center bg-background border border-subtle rounded-xl p-0.5 shadow-2xs">
+                                <button
+                                  type="button"
+                                  onClick={() => setPortfolioViewColumns('1-col')}
+                                  className={`px-2.5 py-1 text-xs font-semibold rounded-lg flex items-center gap-1.5 transition cursor-pointer ${
+                                    portfolioViewColumns === '1-col'
+                                      ? 'bg-brand text-white shadow-xs'
+                                      : 'text-secondary hover:text-primary'
+                                  }`}
+                                  title="1-Column Full Width View"
+                                >
+                                  <List className="w-3.5 h-3.5" /> 1-Col
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setPortfolioViewColumns('2-col')}
+                                  className={`px-2.5 py-1 text-xs font-semibold rounded-lg flex items-center gap-1.5 transition cursor-pointer ${
+                                    portfolioViewColumns === '2-col'
+                                      ? 'bg-brand text-white shadow-xs'
+                                      : 'text-secondary hover:text-primary'
+                                  }`}
+                                  title="2-Column Compact Grid (View All 16 Slots on One Screen)"
+                                >
+                                  <LayoutGrid className="w-3.5 h-3.5" /> 2-Col Grid
+                                </button>
+                              </div>
+
                               <div className="relative">
                                 <Search className="absolute left-2.5 top-2 w-3.5 h-3.5 text-quaternary" />
                                 <input
@@ -3770,7 +4142,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                                   value={portfolioCategorySearch}
                                   onChange={(e) => setPortfolioCategorySearch(e.target.value)}
                                   placeholder="Filter requirements..."
-                                  className="bg-background border border-subtle rounded-xl py-1.5 pl-8 pr-7 text-xs text-primary placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-brand w-36 sm:w-48"
+                                  className="bg-background border border-subtle rounded-xl py-1.5 pl-8 pr-7 text-xs text-primary placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-brand w-36 sm:w-44"
                                 />
                                 {portfolioCategorySearch && (
                                   <button
@@ -3889,7 +4261,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                             </div>
                           </div>
 
-                          <div className="space-y-4">
+                          <div className={portfolioViewColumns === '2-col' ? "grid grid-cols-1 lg:grid-cols-2 gap-3" : "space-y-4"}>
                             {OFFICIAL_16_COURSE_FILE_STRUCTURE.filter(slot => {
                               // Check search filter against slot label, id, and all sub-slots
                               if (portfolioCategorySearch) {
@@ -3941,6 +4313,8 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                                 <div
                                   key={slot.number}
                                   className={`rounded-2xl border transition shadow-xs overflow-hidden ${
+                                    portfolioViewColumns === '2-col' ? 'flex flex-col justify-between' : ''
+                                  } ${
                                     mainDoc
                                       ? mainDoc.status === 'approved' ? 'bg-success-subtle/25 border-success-subtle' :
                                         mainDoc.status === 'rejected' ? 'bg-error-subtle/25 border-error-subtle' :
@@ -3949,8 +4323,8 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                                   }`}
                                 >
                                   {/* Main Slot Container */}
-                                  <div className="p-4 sm:p-5">
-                                    <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                                  <div className={portfolioViewColumns === '2-col' ? "p-3 sm:p-3.5" : "p-4 sm:p-5"}>
+                                    <div className={`flex flex-col ${portfolioViewColumns === '2-col' ? 'sm:flex-row sm:items-start' : 'lg:flex-row lg:items-center'} justify-between gap-3`}>
                                       
                                       {/* Left: Checkbox + Number Badge + Details */}
                                       <div className="flex items-start gap-3.5 min-w-0 flex-grow">
@@ -4100,7 +4474,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                                                 )}
                                               </div>
 
-                                              {((currentUser.id === selectedOffering.instructorId || currentUser.role === UserRole.ADMIN) && (mainDoc.status === 'rejected' || mainDoc.status === 'pending_review')) && (
+                                              {((currentUser.id === selectedOffering.instructorId || currentUser.role === UserRole.ADMIN || currentUser.email === 'data-entry@ewubd.edu') && (mainDoc.status === 'rejected' || mainDoc.status === 'pending_review')) && (
                                                 <button
                                                   onClick={() => {
                                                     setUploadCategory(slot.id);
@@ -4131,7 +4505,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                                                 </button>
                                               )}
 
-                                              {(currentUser.role === UserRole.ADMIN || currentUser.id === selectedOffering.instructorId) && (
+                                              {(currentUser.role === UserRole.ADMIN || currentUser.id === selectedOffering.instructorId || currentUser.email === 'data-entry@ewubd.edu') && (
                                                 <button
                                                   onClick={() => handleDeleteDoc(mainDoc.id, mainDoc.fileName)}
                                                   className="min-w-[40px] min-h-[40px] flex items-center justify-center bg-surface-hover hover:bg-border-subtle text-error hover:text-error-bolder rounded-xl transition cursor-pointer"
@@ -4146,7 +4520,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                                               <span className="text-xs font-bold text-quaternary font-mono uppercase bg-surface-hover px-2 py-1 rounded">
                                                 MISSING
                                               </span>
-                                              {(currentUser.id === selectedOffering.instructorId || currentUser.role === UserRole.ADMIN) && (
+                                              {(currentUser.id === selectedOffering.instructorId || currentUser.role === UserRole.ADMIN || currentUser.email === 'data-entry@ewubd.edu') && (
                                                 <button
                                                   onClick={() => {
                                                     setUploadCategory(slot.id);
@@ -4312,7 +4686,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                                                       )}
                                                     </div>
 
-                                                    {((currentUser.id === selectedOffering.instructorId || currentUser.role === UserRole.ADMIN) && (subDoc.status === 'rejected' || subDoc.status === 'pending_review')) && (
+                                                    {((currentUser.id === selectedOffering.instructorId || currentUser.role === UserRole.ADMIN || currentUser.email === 'data-entry@ewubd.edu') && (subDoc.status === 'rejected' || subDoc.status === 'pending_review')) && (
                                                       <button
                                                         onClick={() => {
                                                           setUploadCategory(sub.id);
@@ -4343,7 +4717,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                                                       </button>
                                                     )}
 
-                                                    {(currentUser.role === UserRole.ADMIN || currentUser.id === selectedOffering.instructorId) && (
+                                                    {(currentUser.role === UserRole.ADMIN || currentUser.id === selectedOffering.instructorId || currentUser.email === 'data-entry@ewubd.edu') && (
                                                       <button
                                                         onClick={() => handleDeleteDoc(subDoc.id, subDoc.fileName)}
                                                         className="p-1.5 bg-surface-hover hover:bg-border-subtle text-error hover:text-error-bolder rounded-lg transition cursor-pointer"
@@ -4358,7 +4732,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                                                     <span className="text-xs font-bold text-quaternary font-mono uppercase bg-surface-hover px-1.5 py-0.5 rounded">
                                                       MISSING
                                                     </span>
-                                                    {(currentUser.id === selectedOffering.instructorId || currentUser.role === UserRole.ADMIN) && (
+                                                    {(currentUser.id === selectedOffering.instructorId || currentUser.role === UserRole.ADMIN || currentUser.email === 'data-entry@ewubd.edu') && (
                                                       <button
                                                         onClick={() => {
                                                           setUploadCategory(sub.id);
@@ -4826,15 +5200,15 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                           <div className="p-5 flex flex-col lg:flex-row lg:items-center justify-between gap-5">
                             {/* Course & Faculty Info */}
                             <div className="flex items-start gap-4 min-w-0 flex-1">
-                              {instructor?.avatarUrl ? (
+                              {instructor?.avatarUrl && !instructor.avatarUrl.includes('unsplash.com') ? (
                                 <img
                                   src={instructor.avatarUrl}
                                   alt={instructor.name}
                                   className="w-12 h-12 rounded-2xl bg-border-subtle shadow-sm shrink-0 object-cover"
                                 />
                               ) : (
-                                <div className="w-12 h-12 rounded-2xl bg-brand/10 text-brand font-bold flex items-center justify-center text-sm border border-brand/20 shrink-0">
-                                  {instructor?.name ? instructor.name.split(' ').map(n => n[0]).join('') : 'FC'}
+                                <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-indigo-500/15 to-purple-500/25 text-brand font-bold flex items-center justify-center text-sm border border-brand/20 shrink-0">
+                                  {instructor?.name ? instructor.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase() : 'FC'}
                                 </div>
                               )}
 
@@ -5337,61 +5711,62 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                   {/* LAYOUT 1: TABLE VIEW */}
                   {archiveViewLayout === 'table' && (
                     <div className="bg-surface border border-subtle rounded-2xl overflow-hidden shadow-sm">
-                      <table className="w-full text-left border-collapse">
-                        <thead>
-                          <tr className="border-b border-subtle bg-background text-xs font-mono uppercase text-quaternary tracking-wider">
-                            <th className="py-3 px-4">Course & Academic Session</th>
-                            <th className="py-3 px-4">Category & File Name</th>
-                            <th className="py-3 px-4">Uploaded By</th>
-                            <th className="py-3 px-4 text-center">Status</th>
-                            <th className="py-3 px-4 text-right">Actions</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60 text-xs text-secondary">
-                          {filteredDocs.map(doc => {
-                            const categoryLabel = getCategoryLabel(doc.category);
-                            return (
-                              <tr key={doc.id} className="hover:bg-background/80 transition group">
-                                <td className="py-3 px-4">
-                                  <p className="font-mono font-bold text-brand">{doc.course?.code}</p>
-                                  <p className="text-xs text-tertiary font-mono mt-0.5">
-                                    {doc.offering?.term} {doc.offering?.academicYear} {doc.course?.department ? `• ${doc.course.department}` : ''}
-                                  </p>
-                                </td>
-                                <td className="py-3 px-4">
-                                  <p className="font-semibold text-primary">{categoryLabel}</p>
-                                  <p className="text-xs text-tertiary font-mono mt-0.5 max-w-[220px] truncate" title={doc.fileName}>{doc.fileName}</p>
-                                </td>
-                                <td className="py-3 px-4">
-                                  <p className="font-medium text-secondary">{doc.uploadedBy.split('@')[0]}</p>
-                                  <p className="text-xs text-tertiary font-mono">{doc.uploadedAt ? new Date(doc.uploadedAt).toLocaleDateString() : ''}</p>
-                                </td>
-                                <td className="py-3 px-4 text-center">
-                                  {doc.status === 'approved' ? (
-                                    <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold uppercase tracking-wider bg-success-subtle text-success-bold border border-success-subtle">
-                                      <CheckCircle className="w-3.5 h-3.5" /> Approved
-                                    </span>
-                                  ) : doc.status === 'rejected' ? (
-                                    <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold uppercase tracking-wider bg-error-subtle text-error-bold border border-error-subtle">
-                                      <AlertCircle className="w-3.5 h-3.5" /> Rejected
-                                    </span>
-                                  ) : (
-                                    <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold uppercase tracking-wider bg-warning-subtle text-warning-bold border border-warning-subtle">
-                                      <Clock className="w-3.5 h-3.5" /> Pending
-                                    </span>
-                                  )}
-                                </td>
-                                <td className="py-3 px-4 text-right">
-                                  <div className="flex items-center justify-end gap-2">
-                                    <button
-                                      type="button"
-                                      onClick={() => setPreviewDoc(doc)}
-                                      className="text-brand hover:text-brand-bolder p-1.5 hover:bg-brand-subtle rounded-lg transition cursor-pointer"
-                                      title="Preview Document"
-                                    >
-                                      <Eye className="w-4 h-4" />
-                                    </button>
-                                    <button
+                      <div className="overflow-x-auto w-full">
+                        <table className="w-full text-left border-collapse min-w-[640px]">
+                          <thead>
+                            <tr className="border-b border-subtle bg-background text-xs font-mono uppercase text-quaternary tracking-wider">
+                              <th className="py-3 px-4">Course & Academic Session</th>
+                              <th className="py-3 px-4">Category & File Name</th>
+                              <th className="py-3 px-4">Uploaded By</th>
+                              <th className="py-3 px-4 text-center">Status</th>
+                              <th className="py-3 px-4 text-right">Actions</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60 text-xs text-secondary">
+                            {filteredDocs.map(doc => {
+                              const categoryLabel = getCategoryLabel(doc.category);
+                              return (
+                                <tr key={doc.id} className="hover:bg-background/80 transition group">
+                                  <td className="py-3 px-4">
+                                    <p className="font-mono font-bold text-brand">{doc.course?.code}</p>
+                                    <p className="text-xs text-tertiary font-mono mt-0.5">
+                                      {doc.offering?.term} {doc.offering?.academicYear} {doc.course?.department ? `• ${doc.course.department}` : ''}
+                                    </p>
+                                  </td>
+                                  <td className="py-3 px-4">
+                                    <p className="font-semibold text-primary">{categoryLabel}</p>
+                                    <p className="text-xs text-tertiary font-mono mt-0.5 max-w-[220px] truncate" title={doc.fileName}>{doc.fileName}</p>
+                                  </td>
+                                  <td className="py-3 px-4">
+                                    <p className="font-medium text-secondary">{doc.uploadedBy.split('@')[0]}</p>
+                                    <p className="text-xs text-tertiary font-mono">{doc.uploadedAt ? new Date(doc.uploadedAt).toLocaleDateString() : ''}</p>
+                                  </td>
+                                  <td className="py-3 px-4 text-center">
+                                    {doc.status === 'approved' ? (
+                                      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold uppercase tracking-wider bg-success-subtle text-success-bold border border-success-subtle">
+                                        <CheckCircle className="w-3.5 h-3.5" /> Approved
+                                      </span>
+                                    ) : doc.status === 'rejected' ? (
+                                      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold uppercase tracking-wider bg-error-subtle text-error-bold border border-error-subtle">
+                                        <AlertCircle className="w-3.5 h-3.5" /> Rejected
+                                      </span>
+                                    ) : (
+                                      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold uppercase tracking-wider bg-warning-subtle text-warning-bold border border-warning-subtle">
+                                        <Clock className="w-3.5 h-3.5" /> Pending
+                                      </span>
+                                    )}
+                                  </td>
+                                  <td className="py-3 px-4 text-right">
+                                    <div className="flex items-center justify-end gap-2">
+                                      <button
+                                        type="button"
+                                        onClick={() => setPreviewDoc(doc)}
+                                        className="text-brand hover:text-brand-bolder p-1.5 hover:bg-brand-subtle rounded-lg transition cursor-pointer"
+                                        title="Preview Document"
+                                      >
+                                        <Eye className="w-4 h-4" />
+                                      </button>
+                                      <button
                                         onClick={() => {
                                           setHistoryModalCategory(doc.category);
                                           setHistoryModalOfferingId(doc.offeringId);
@@ -5410,13 +5785,14 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                                           <Trash2 className="w-4 h-4" />
                                         </button>
                                       )}
-                                  </div>
-                                </td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
+                                    </div>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
                     </div>
                   )}
 
@@ -5610,8 +5986,8 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
 
 
 
-          {/* --- TAB 4: AUDIT LOG --- */}
-          {activeTab === 'ledger' && (
+          {/* --- TAB 4: AUDIT LOG (ADMIN ONLY) --- */}
+          {activeTab === 'ledger' && currentUser.role === UserRole.ADMIN && (
             <div className="space-y-6">
               <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div>
@@ -5699,11 +6075,11 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                   return (
                     <div key={u.id} className="bg-surface border border-subtle rounded-2xl p-5 flex flex-col justify-between hover:border-indigo-350 hover:shadow-md transition duration-150 shadow-sm space-y-4">
                       <div className="flex items-start gap-4">
-                        {u.avatarUrl ? (
+                        {u.avatarUrl && !u.avatarUrl.includes('unsplash.com') ? (
                           <img src={u.avatarUrl} alt={u.name} className="w-12 h-12 rounded-xl border border-subtle object-cover shrink-0" />
                         ) : (
-                          <div className="w-12 h-12 rounded-xl bg-background border border-subtle font-bold text-brand text-base flex items-center justify-center shrink-0">
-                            {u.name.split(' ').map(n => n[0]).join('')}
+                          <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-indigo-500/15 to-purple-500/25 border border-brand/20 font-bold text-brand text-sm flex items-center justify-center shrink-0">
+                            {u.name ? u.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase() : 'U'}
                           </div>
                         )}
 
@@ -5807,6 +6183,17 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                             >
                               <Settings className="w-3.5 h-3.5" /> Manage Clearance
                             </button>
+                            {currentUser?.role === UserRole.ADMIN && u.id !== currentUser.id && (
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteUser(u)}
+                                className="inline-flex items-center gap-1 px-2.5 py-1.5 border border-rose-500/30 hover:border-rose-500/60 bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 dark:text-rose-400 rounded-lg text-xs font-semibold transition cursor-pointer"
+                                title={`Delete ${u.name} from directory`}
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                                <span>Delete</span>
+                              </button>
+                            )}
                           </>
                         )}
                       </div>
@@ -6290,9 +6677,9 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
 
       {/* Floating Bottom Action Bar for Selective Export & Print */}
       {selectedDocIdsForBatch.size > 0 && selectedOffering && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 bg-slate-900/95 dark:bg-slate-950/95 text-white border border-slate-700/80 shadow-2xl rounded-2xl px-5 py-3.5 flex flex-wrap items-center gap-4 backdrop-blur-md animate-slide-up">
+        <div className="fixed bottom-4 sm:bottom-6 left-3 right-3 sm:left-1/2 sm:right-auto sm:-translate-x-1/2 z-40 bg-slate-900/95 dark:bg-slate-950/95 text-white border border-slate-700/80 shadow-2xl rounded-2xl p-3 sm:px-5 sm:py-3.5 flex flex-wrap items-center justify-between sm:justify-start gap-2.5 sm:gap-4 backdrop-blur-md animate-slide-up max-w-full sm:max-w-xl">
           <div className="flex items-center gap-2">
-            <span className="w-7 h-7 rounded-full bg-indigo-600 text-white font-mono font-bold text-xs flex items-center justify-center shadow-xs">
+            <span className="w-6 h-6 sm:w-7 sm:h-7 rounded-full bg-indigo-600 text-white font-mono font-bold text-xs flex items-center justify-center shadow-xs">
               {selectedDocIdsForBatch.size}
             </span>
             <span className="text-xs font-semibold">
@@ -6302,22 +6689,22 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
 
           <div className="hidden sm:block h-5 w-px bg-slate-700"></div>
 
-          <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-2 sm:gap-2.5 flex-wrap">
             <button
               onClick={handleBatchSelectiveExport}
               disabled={isExportingSelective}
-              className="bg-indigo-600 hover:bg-indigo-500 text-white px-3.5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition shadow-sm cursor-pointer disabled:opacity-50"
+              className="bg-indigo-600 hover:bg-indigo-500 text-white px-3 sm:px-3.5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition shadow-sm cursor-pointer disabled:opacity-50"
             >
               {isExportingSelective ? <Clock className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
-              <span>{isExportingSelective ? 'Exporting ZIP...' : 'Download Selected (ZIP)'}</span>
+              <span>{isExportingSelective ? 'Exporting...' : 'ZIP Export'}</span>
             </button>
 
             <button
               onClick={() => setShowPrintManifestModal(true)}
-              className="bg-emerald-600 hover:bg-emerald-500 text-white px-3.5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition shadow-sm cursor-pointer"
+              className="bg-emerald-600 hover:bg-emerald-500 text-white px-3 sm:px-3.5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition shadow-sm cursor-pointer"
             >
               <Printer className="w-3.5 h-3.5" />
-              <span>Print / PDF Manifest</span>
+              <span>Manifest</span>
             </button>
 
             <button
@@ -8538,7 +8925,224 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
           </div>
         </div>
       )}
+
+      {/* Modal: Digital Signature & Workflow Endorsement */}
+      {showSignatureModal && selectedOffering && (
+        <div role="dialog" aria-modal="true" aria-label="Digital Signature Modal" className="fixed inset-0 bg-inverse-surface-dark/70 backdrop-blur-sm z-50 flex items-center justify-center p-3 sm:p-4 animate-fade-in">
+          <div className="bg-surface border border-subtle rounded-2xl sm:rounded-3xl w-full max-w-[calc(100vw-1.5rem)] sm:max-w-xl max-h-[92vh] shadow-2xl flex flex-col overflow-hidden animate-scale-up">
+            {/* Modal Header */}
+            <div className="bg-background px-4 sm:px-6 py-3 sm:py-4 border-b border-subtle flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-2.5 sm:gap-3">
+                <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-brand/10 text-brand flex items-center justify-center shrink-0">
+                  <Shield className="w-5 h-5" />
+                </div>
+                <div>
+                  <span className="text-[10px] sm:text-xs font-mono font-bold uppercase tracking-wider text-brand">
+                    {signatureAction === 'submit' ? 'Faculty Submission' : 'Department Endorsement'}
+                  </span>
+                  <h3 className="text-sm sm:text-base font-bold text-primary">
+                    {signatureAction === 'submit' ? 'Sign & Submit Course Portfolio' : 'Endorse & Seal Course Portfolio'}
+                  </h3>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowSignatureModal(false)}
+                className="p-1.5 sm:p-2 text-quaternary hover:text-primary hover:bg-surface-hover rounded-xl transition cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Context Info */}
+            <div className="px-4 sm:px-6 py-2.5 sm:py-3 bg-brand/5 border-b border-subtle flex flex-col sm:flex-row items-start sm:items-center justify-between gap-1.5 text-xs text-secondary shrink-0">
+              <div>
+                <span className="font-bold text-primary">{selectedOffering.course?.code} - {selectedOffering.course?.title}</span>
+                <span className="text-tertiary ml-2">({selectedOffering.term} {selectedOffering.academicYear} • Sec {selectedOffering.section})</span>
+              </div>
+              <span className="font-mono text-xs font-bold text-brand bg-surface px-2 py-0.5 rounded border border-subtle">
+                Signed as: {currentUser?.name}
+              </span>
+            </div>
+
+            <div className="overflow-y-auto flex-grow">
+              {/* Signature Mode Selector Tabs */}
+              <div className="px-4 sm:px-6 pt-3 pb-2">
+                <div className="flex rounded-xl bg-background p-1 border border-subtle">
+                  <button
+                    type="button"
+                    onClick={() => setSignatureMode('draw')}
+                    className={`flex-1 py-1.5 sm:py-2 px-2 sm:px-3 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1 sm:gap-1.5 cursor-pointer ${
+                      signatureMode === 'draw'
+                        ? 'bg-brand text-white shadow-xs'
+                        : 'text-secondary hover:text-primary'
+                    }`}
+                  >
+                    <span>✍️</span> <span className="hidden xs:inline">Draw</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSignatureMode('upload')}
+                    className={`flex-1 py-1.5 sm:py-2 px-2 sm:px-3 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1 sm:gap-1.5 cursor-pointer ${
+                      signatureMode === 'upload'
+                        ? 'bg-brand text-white shadow-xs'
+                        : 'text-secondary hover:text-primary'
+                    }`}
+                  >
+                    <span>🖼️</span> <span className="hidden xs:inline">Upload File</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSignatureMode('type')}
+                    className={`flex-1 py-1.5 sm:py-2 px-2 sm:px-3 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1 sm:gap-1.5 cursor-pointer ${
+                      signatureMode === 'type'
+                        ? 'bg-brand text-white shadow-xs'
+                        : 'text-secondary hover:text-primary'
+                    }`}
+                  >
+                    <span>⌨️</span> <span className="hidden xs:inline">Type Styled</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Mode Body */}
+              <div className="px-4 sm:px-6 py-3 space-y-3 sm:space-y-4">
+                {signatureMode === 'draw' && (
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between text-xs text-tertiary">
+                      <span>Draw with mouse or touchscreen:</span>
+                      <button
+                        type="button"
+                        onClick={() => sigCanvasRef.current?.clear()}
+                        className="text-xs text-rose-500 hover:text-rose-600 font-bold underline cursor-pointer"
+                      >
+                        Clear Canvas
+                      </button>
+                    </div>
+                    <div className="border-2 border-dashed border-subtle hover:border-brand rounded-2xl bg-white overflow-hidden shadow-inner h-40 sm:h-44">
+                      <SignatureCanvas
+                        ref={sigCanvasRef}
+                        penColor="#0f172a"
+                        canvasProps={{
+                          className: 'w-full h-full cursor-crosshair'
+                        }}
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {signatureMode === 'upload' && (
+                  <div className="space-y-3">
+                    <div className="border-2 border-dashed border-subtle hover:border-brand rounded-2xl p-4 sm:p-6 text-center cursor-pointer transition bg-background">
+                      <input
+                        type="file"
+                        id="sig-file-upload"
+                        className="hidden"
+                        accept="image/png,image/jpeg,image/jpg,image/webp"
+                        onChange={(e) => {
+                          if (e.target.files && e.target.files.length > 0) {
+                            const file = e.target.files[0];
+                            const reader = new FileReader();
+                            reader.onload = (loadEvt) => {
+                              setUploadedSignatureUrl(loadEvt.target?.result as string);
+                            };
+                            reader.readAsDataURL(file);
+                          }
+                        }}
+                      />
+                      {uploadedSignatureUrl ? (
+                        <div className="space-y-3">
+                          <div className="bg-white p-4 rounded-xl border border-subtle inline-block max-w-full">
+                            <img src={uploadedSignatureUrl} alt="Uploaded Signature" className="h-20 sm:h-24 max-w-full object-contain mx-auto" />
+                          </div>
+                          <div>
+                            <button
+                              type="button"
+                              onClick={() => setUploadedSignatureUrl(null)}
+                              className="text-xs text-rose-500 hover:text-rose-600 font-bold underline cursor-pointer"
+                            >
+                              Remove / Choose Another
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <label htmlFor="sig-file-upload" className="block w-full h-full cursor-pointer">
+                          <FileUp className="w-7 h-7 sm:w-8 sm:h-8 text-brand mx-auto mb-2 animate-bounce" />
+                          <p className="text-xs font-bold text-primary">Upload scanned signature image (.png, .jpg)</p>
+                          <p className="text-xs text-tertiary mt-1">Recommended: Clean black/dark ink on transparent or white background</p>
+                        </label>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {signatureMode === 'type' && (
+                  <div className="space-y-3">
+                    <div>
+                      <label className="block text-xs font-bold text-tertiary uppercase font-mono mb-1">Full Legal Name</label>
+                      <input
+                        type="text"
+                        value={typedSignatureName}
+                        onChange={(e) => setTypedSignatureName(e.target.value)}
+                        placeholder="Type your name..."
+                        className="w-full bg-background border border-subtle rounded-xl py-2 sm:py-2.5 px-3 text-xs text-primary font-bold focus:outline-none focus:ring-1 focus:ring-brand"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-tertiary uppercase font-mono mb-2">Choose Signature Style</label>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        {[
+                          { name: 'Elegant Flourish', font: 'font-["Great_Vibes",cursive]' },
+                          { name: 'Modern Script', font: 'font-["Dancing_Script",cursive]' },
+                          { name: 'Classic Calligraphy', font: 'font-["Sacramento",cursive]' },
+                          { name: 'Casual Hand', font: 'font-["Caveat",cursive]' }
+                        ].map((style, idx) => (
+                          <button
+                            key={style.name}
+                            type="button"
+                            onClick={() => setTypedSignatureFont(idx)}
+                            className={`p-2.5 sm:p-3 rounded-xl border text-center transition cursor-pointer ${
+                              typedSignatureFont === idx
+                                ? 'bg-brand/10 border-brand text-brand ring-1 ring-brand'
+                                : 'bg-background border-subtle hover:bg-surface-hover text-secondary'
+                            }`}
+                          >
+                            <span className="text-xs font-semibold block text-tertiary mb-1">{style.name}</span>
+                            <span className={`text-lg block text-slate-800 dark:text-slate-200 truncate ${style.font}`} style={{ fontFamily: idx === 0 ? '"Great Vibes", cursive' : idx === 1 ? '"Dancing Script", cursive' : idx === 2 ? '"Sacramento", cursive' : '"Caveat", cursive' }}>
+                              {typedSignatureName.trim() || 'Your Signature'}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Footer Actions */}
+            <div className="px-4 sm:px-6 py-3 sm:py-4 border-t border-subtle flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-between gap-2.5 bg-background shrink-0">
+              <button
+                type="button"
+                onClick={() => setShowSignatureModal(false)}
+                className="px-4 py-2 border border-subtle rounded-xl text-tertiary hover:text-primary text-xs font-bold transition cursor-pointer hover:bg-surface text-center"
+              >
+                Cancel
+              </button>
+
+              <button
+                type="button"
+                onClick={handleSignatureSubmit}
+                className="px-4 sm:px-5 py-2.5 bg-gradient-to-r from-indigo-600 to-brand hover:from-indigo-700 hover:to-brand-hover text-white font-bold rounded-xl text-xs transition cursor-pointer shadow-md shadow-brand/20 flex items-center justify-center gap-1.5"
+              >
+                <CheckCircle className="w-4 h-4" />
+                <span>{signatureAction === 'submit' ? 'Confirm & Submit Portfolio' : 'Confirm & Endorse Portfolio'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
-

@@ -18,6 +18,7 @@ export interface User {
   avatarUrl?: string;
   department?: string;
   pendingApproval?: boolean;
+  passwordHash?: string;
 }
 
 export interface Course {

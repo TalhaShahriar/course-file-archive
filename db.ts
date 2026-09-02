@@ -2,6 +2,7 @@ import 'dotenv/config';
 import postgres from 'postgres';
 import fs from 'fs';
 import path from 'path';
+import crypto from 'crypto';
 import { 
   User, 
   UserRole, 
@@ -16,6 +17,27 @@ import {
   CORE_16_CATEGORIES,
   AppNotification
 } from './src/types.js';
+
+// Password Hashing & Verification Utilities
+export function hashPassword(password: string): string {
+  const salt = crypto.randomBytes(16).toString('hex');
+  const hash = crypto.pbkdf2Sync(password, salt, 1000, 64, 'sha512').toString('hex');
+  return `${salt}:${hash}`;
+}
+
+export function verifyPassword(password: string, storedPasswordHash?: string): boolean {
+  if (!storedPasswordHash) return false;
+  const parts = storedPasswordHash.split(':');
+  if (parts.length !== 2) {
+    return storedPasswordHash === password;
+  }
+  const [salt, originalHash] = parts;
+  const hashToVerify = crypto.pbkdf2Sync(password, salt, 1000, 64, 'sha512').toString('hex');
+  return hashToVerify === originalHash;
+}
+
+// Default initial password hash for pre-seeded accounts: "ewu123456"
+export const DEFAULT_SEED_PASSWORD_HASH = hashPassword('ewu123456');
 
 let currentDir = '';
 if (typeof __dirname !== 'undefined') {
@@ -55,12 +77,67 @@ if (IS_VERCEL) {
 // Initial Seed Data
 const INITIAL_USERS: User[] = [
   {
+    id: 'user_maheen',
+    name: 'Dr. Maheen Islam',
+    email: 'maheen@ewubd.edu',
+    role: UserRole.DEPT_HEAD,
+    department: 'Department of Computer Science & Engineering',
+    pendingApproval: false,
+    passwordHash: DEFAULT_SEED_PASSWORD_HASH,
+  },
+  {
+    id: 'user_mcctuhin',
+    name: 'Rashedul Amin Tuhin',
+    email: 'mcctuhin@ewubd.edu',
+    role: UserRole.INSTRUCTOR,
+    department: 'Department of Computer Science & Engineering',
+    pendingApproval: false,
+    passwordHash: DEFAULT_SEED_PASSWORD_HASH,
+  },
+  {
+    id: 'user_taskeed',
+    name: 'Dr. Taskeed Jabid',
+    email: 'taskeed@ewubd.edu',
+    role: UserRole.INSTRUCTOR,
+    department: 'Department of Computer Science & Engineering',
+    pendingApproval: false,
+    passwordHash: DEFAULT_SEED_PASSWORD_HASH,
+  },
+  {
+    id: 'user_wasif',
+    name: 'Dr. Ahmed Wasif Reza',
+    email: 'wasif@ewubd.edu',
+    role: UserRole.INSTRUCTOR,
+    department: 'Department of Computer Science & Engineering',
+    pendingApproval: false,
+    passwordHash: DEFAULT_SEED_PASSWORD_HASH,
+  },
+  {
+    id: 'user_data_entry',
+    name: 'Universal Data Entry Assistant',
+    email: 'data-entry@ewubd.edu',
+    role: UserRole.INSTRUCTOR,
+    department: 'Department of Computer Science & Engineering',
+    pendingApproval: false,
+    passwordHash: DEFAULT_SEED_PASSWORD_HASH,
+  },
+  {
+    id: 'user_dev',
+    name: 'Talha (Developer)',
+    email: 'talharupok2022@gmail.com',
+    role: UserRole.ADMIN,
+    department: 'Department of Computer Science & Engineering',
+    pendingApproval: false,
+    passwordHash: DEFAULT_SEED_PASSWORD_HASH,
+  },
+  {
     id: 'user_1',
     name: 'Dr. Alice Smith',
     email: 'alice@university.edu',
     role: UserRole.INSTRUCTOR,
     department: 'Computer Science & Engineering',
-    avatarUrl: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150',
+    pendingApproval: false,
+    passwordHash: DEFAULT_SEED_PASSWORD_HASH,
   },
   {
     id: 'user_2',
@@ -68,7 +145,8 @@ const INITIAL_USERS: User[] = [
     email: 'bob@university.edu',
     role: UserRole.INSTRUCTOR,
     department: 'Computer Science & Engineering',
-    avatarUrl: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150',
+    pendingApproval: false,
+    passwordHash: DEFAULT_SEED_PASSWORD_HASH,
   },
   {
     id: 'user_3',
@@ -76,7 +154,8 @@ const INITIAL_USERS: User[] = [
     email: 'head@university.edu',
     role: UserRole.DEPT_HEAD,
     department: 'Computer Science & Engineering',
-    avatarUrl: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=150',
+    pendingApproval: false,
+    passwordHash: DEFAULT_SEED_PASSWORD_HASH,
   },
   {
     id: 'user_4',
@@ -84,7 +163,8 @@ const INITIAL_USERS: User[] = [
     email: 'auditor@university.edu',
     role: UserRole.AUDITOR,
     department: 'Academic Registry',
-    avatarUrl: 'https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?w=150',
+    pendingApproval: false,
+    passwordHash: DEFAULT_SEED_PASSWORD_HASH,
   },
   {
     id: 'user_5',
@@ -92,15 +172,8 @@ const INITIAL_USERS: User[] = [
     email: 'admin@university.edu',
     role: UserRole.ADMIN,
     department: 'IT Administration',
-    avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150',
-  },
-  {
-    id: 'user_dev',
-    name: 'Talha (Developer)',
-    email: 'talharupok2022@gmail.com',
-    role: UserRole.ADMIN,
-    department: 'IT Administration',
-    avatarUrl: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150',
+    pendingApproval: false,
+    passwordHash: DEFAULT_SEED_PASSWORD_HASH,
   },
 ];
 
@@ -284,13 +357,17 @@ export function initDatabaseSchema(): Promise<void> {
           role VARCHAR(50) NOT NULL,
           department VARCHAR(100),
           avatar_url TEXT,
-          pending_approval BOOLEAN DEFAULT FALSE
+          pending_approval BOOLEAN DEFAULT FALSE,
+          password_hash TEXT
         )
       `;
 
-      // Ensure pending_approval column exists if users table was created previously
+      // Ensure pending_approval and password_hash columns exist if users table was created previously
       await sql`
         ALTER TABLE users ADD COLUMN IF NOT EXISTS pending_approval BOOLEAN DEFAULT FALSE
+      `;
+      await sql`
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash TEXT
       `;
 
       // Create courses table
@@ -413,6 +490,20 @@ export function initDatabaseSchema(): Promise<void> {
 
       await sql`CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id)`;
 
+      // Seed / Sync Initial Approved Users
+      for (const u of INITIAL_USERS) {
+        await sql`
+          INSERT INTO users (id, name, email, role, department, avatar_url, pending_approval, password_hash)
+          VALUES (${u.id}, ${u.name}, ${u.email}, ${u.role}, ${u.department || 'Department of Computer Science & Engineering'}, ${u.avatarUrl || null}, false, ${u.passwordHash || DEFAULT_SEED_PASSWORD_HASH})
+          ON CONFLICT (email) DO UPDATE SET
+            role = EXCLUDED.role,
+            name = EXCLUDED.name,
+            department = EXCLUDED.department,
+            pending_approval = false,
+            password_hash = COALESCE(users.password_hash, EXCLUDED.password_hash)
+        `;
+      }
+
       // Seed / Sync Initial Courses
       for (const c of INITIAL_COURSES) {
         await sql`
@@ -527,7 +618,7 @@ function writeLocalDB(data: Database) {
 // USERS
 export async function dbGetUsers(): Promise<User[]> {
   if (sql) {
-    const rows = await sql`SELECT id, name, email, role, department, avatar_url as "avatarUrl", pending_approval as "pendingApproval" FROM users`;
+    const rows = await sql`SELECT id, name, email, role, department, avatar_url as "avatarUrl", pending_approval as "pendingApproval", password_hash as "passwordHash" FROM users`;
     return rows as User[];
   }
   const db = readLocalDB();
@@ -537,7 +628,7 @@ export async function dbGetUsers(): Promise<User[]> {
 export async function dbGetUserByEmail(email: string): Promise<User | null> {
   if (sql) {
     const rows = await sql`
-      SELECT id, name, email, role, department, avatar_url as "avatarUrl", pending_approval as "pendingApproval" 
+      SELECT id, name, email, role, department, avatar_url as "avatarUrl", pending_approval as "pendingApproval", password_hash as "passwordHash" 
       FROM users 
       WHERE LOWER(email) = LOWER(${email})
     `;
@@ -550,8 +641,8 @@ export async function dbGetUserByEmail(email: string): Promise<User | null> {
 export async function dbCreateUser(user: User): Promise<User> {
   if (sql) {
     await sql`
-      INSERT INTO users (id, name, email, role, department, avatar_url, pending_approval)
-      VALUES (${user.id}, ${user.name}, ${user.email}, ${user.role}, ${user.department}, ${user.avatarUrl}, ${user.pendingApproval || false})
+      INSERT INTO users (id, name, email, role, department, avatar_url, pending_approval, password_hash)
+      VALUES (${user.id}, ${user.name}, ${user.email}, ${user.role}, ${user.department}, ${user.avatarUrl}, ${user.pendingApproval || false}, ${user.passwordHash || null})
     `;
     return user;
   }
@@ -607,6 +698,53 @@ export async function dbUpdateUserRole(userId: string, role: string, department?
   }
   writeLocalDB(db);
   return user;
+}
+
+export async function dbUpdateUserAvatar(userId: string, avatarUrl: string): Promise<User | null> {
+  if (sql) {
+    const rows = await sql`
+      UPDATE users 
+      SET avatar_url = ${avatarUrl}
+      WHERE id = ${userId}
+      RETURNING id, name, email, role, department, avatar_url as "avatarUrl", pending_approval as "pendingApproval"
+    `;
+    return rows.length > 0 ? (rows[0] as User) : null;
+  }
+  const db = readLocalDB();
+  const user = db.users.find(u => u.id === userId);
+  if (!user) return null;
+  user.avatarUrl = avatarUrl;
+  writeLocalDB(db);
+  return user;
+}
+
+export async function dbDeleteUser(userId: string): Promise<boolean> {
+  if (sql) {
+    // Delete notifications for this user
+    await sql`DELETE FROM notifications WHERE user_id = ${userId}`;
+    // Offerings referencing instructor_id or auditor_id will automatically SET NULL due to foreign key
+    const rows = await sql`DELETE FROM users WHERE id = ${userId} RETURNING id`;
+    return rows.length > 0;
+  }
+  const db = readLocalDB();
+  const userIdx = db.users.findIndex(u => u.id === userId);
+  if (userIdx === -1) return false;
+  db.users.splice(userIdx, 1);
+  if (db.offerings) {
+    db.offerings.forEach(o => {
+      if (o.instructorId === userId) {
+        o.instructorId = '';
+      }
+      if (o.auditorId === userId) {
+        o.auditorId = null;
+      }
+    });
+  }
+  if (db.notifications) {
+    db.notifications = db.notifications.filter(n => n.userId !== userId);
+  }
+  writeLocalDB(db);
+  return true;
 }
 
 // COURSES

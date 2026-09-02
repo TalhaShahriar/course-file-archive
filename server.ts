@@ -35,6 +35,8 @@ import {
   dbGetUserByEmail,
   dbCreateUser,
   dbUpdateUserRole,
+  dbUpdateUserAvatar,
+  dbDeleteUser,
   dbGetCourses,
   dbCreateCourse,
   dbGetOfferings,
@@ -59,7 +61,10 @@ import {
   dbCreateNotification,
   dbMarkNotificationRead,
   dbMarkAllNotificationsRead,
-  dbDeleteNotification
+  dbDeleteNotification,
+  hashPassword,
+  verifyPassword,
+  DEFAULT_SEED_PASSWORD_HASH,
 } from './db.js';
 
 import { uploadFile, getFile, generateUploadUrl, generateDownloadUrl, isR2Configured, deleteFile } from './storage.js';
@@ -141,10 +146,78 @@ app.get('/api/me', async (req: Request, res: Response) => {
   res.json({ user });
 });
 
-app.post('/api/login', loginLimiter, async (req: Request, res: Response) => {
-  const { email, googleToken } = req.body;
+// Registration Endpoint
+app.post('/api/register', loginLimiter, async (req: Request, res: Response) => {
+  const { name, email, password, department, role } = req.body;
   
-  let targetEmail = email;
+  if (!email || !password || !name) {
+    return res.status(400).json({ error: 'Full name, university email, and password are required.' });
+  }
+  
+  if (password.length < 6) {
+    return res.status(400).json({ error: 'Password must be at least 6 characters long.' });
+  }
+
+  const targetEmail = email.trim().toLowerCase();
+  const existingUser = await dbGetUserByEmail(targetEmail);
+  if (existingUser) {
+    return res.status(400).json({ error: 'An account with this email address already exists. Please sign in instead.' });
+  }
+
+  const emailLower = targetEmail;
+  const isDev = emailLower === 'talharupok2022@gmail.com' || emailLower.includes('admin');
+  const isDeptHead = emailLower === 'maheen@ewubd.edu';
+  const isEWU = emailLower.endsWith('@ewubd.edu') || emailLower.endsWith('@university.edu');
+
+  let assignedRole: UserRole = UserRole.INSTRUCTOR;
+  if (isDev) {
+    assignedRole = UserRole.ADMIN;
+  } else if (isDeptHead || role === UserRole.DEPT_HEAD) {
+    assignedRole = UserRole.DEPT_HEAD;
+  } else if (role === UserRole.AUDITOR) {
+    assignedRole = UserRole.AUDITOR;
+  }
+
+  const newUser: User = {
+    id: `user_${Date.now()}`,
+    name: name.trim(),
+    email: targetEmail,
+    role: assignedRole,
+    department: department?.trim() || 'Department of Computer Science & Engineering',
+    pendingApproval: !(isDev || isDeptHead || isEWU),
+    passwordHash: hashPassword(password),
+  };
+
+  await dbCreateUser(newUser);
+
+  // Set session cookie
+  res.cookie('session_user_email', newUser.email, {
+    maxAge: 24 * 60 * 60 * 1000,
+    httpOnly: true,
+    path: '/',
+    sameSite: 'none',
+    secure: true,
+  });
+
+  await dbCreateAuditLog({
+    id: `log_${Date.now()}`,
+    action: 'USER_REGISTER',
+    actorId: newUser.id,
+    actorName: newUser.name,
+    actorEmail: newUser.email,
+    timestamp: new Date().toISOString(),
+    details: `New staff ${newUser.name} (${newUser.email}) registered with role ${newUser.role}.`,
+  });
+
+  const { passwordHash, ...userClean } = newUser;
+  return res.json({ user: userClean, message: 'Account registered and logged in successfully' });
+});
+
+// Login Endpoint
+app.post('/api/login', loginLimiter, async (req: Request, res: Response) => {
+  const { email, password, googleToken } = req.body;
+  
+  let targetEmail = email ? email.trim().toLowerCase() : '';
   let targetName = '';
   let targetPicture = '';
 
@@ -160,12 +233,12 @@ app.post('/api/login', loginLimiter, async (req: Request, res: Response) => {
       if (!payload) {
         return res.status(401).json({ error: 'Invalid authentication token' });
       }
-      targetEmail = payload.email || '';
+      targetEmail = (payload.email || '').toLowerCase();
       targetName = payload.name || '';
       targetPicture = payload.picture || '';
     } catch (e) {
       console.error('Token verification failed', e);
-      return res.status(401).json({ error: 'Token verification failed' });
+      return res.status(401).json({ error: 'Google authentication token verification failed' });
     }
   }
 
@@ -175,19 +248,42 @@ app.post('/api/login', loginLimiter, async (req: Request, res: Response) => {
 
   let user = await dbGetUserByEmail(targetEmail);
 
-  // If user is not registered, automatically register them!
-  if (!user) {
-    const isDev = targetEmail.toLowerCase() === 'talharupok2022@gmail.com' || targetEmail.toLowerCase().includes('admin');
+  // If logging in with Google OAuth and user does not exist in DB, automatically register them!
+  if (googleToken && !user) {
+    const emailLower = targetEmail;
+    const isDev = emailLower === 'talharupok2022@gmail.com' || emailLower.includes('admin');
+    const isDeptHead = emailLower === 'maheen@ewubd.edu';
+    const isEWU = emailLower.endsWith('@ewubd.edu') || emailLower.endsWith('@university.edu');
+    
     user = {
       id: `user_${Date.now()}`,
-      name: targetName || targetEmail.split('@')[0],
+      name: targetName || (emailLower === 'data-entry@ewubd.edu' ? 'Universal Data Entry Assistant' : targetEmail.split('@')[0]),
       email: targetEmail,
-      role: isDev ? UserRole.ADMIN : UserRole.INSTRUCTOR,
-      department: 'Computer Science & Engineering',
-      avatarUrl: targetPicture || `https://images.unsplash.com/photo-${1500000000000 + Math.floor(Math.random() * 900000)}?w=150`,
-      pendingApproval: !isDev,
+      role: isDev ? UserRole.ADMIN : isDeptHead ? UserRole.DEPT_HEAD : UserRole.INSTRUCTOR,
+      department: 'Department of Computer Science & Engineering',
+      avatarUrl: targetPicture || undefined,
+      pendingApproval: !(isDev || isDeptHead || isEWU),
+      passwordHash: DEFAULT_SEED_PASSWORD_HASH,
     };
     await dbCreateUser(user);
+  } else if (googleToken && user && targetPicture && user.avatarUrl !== targetPicture) {
+    user.avatarUrl = targetPicture;
+    await dbUpdateUserAvatar(user.id, targetPicture);
+  }
+
+  // If logging in with Email & Password
+  if (!googleToken) {
+    if (!user) {
+      return res.status(404).json({ error: 'No account found with this email. Please register to create an account.' });
+    }
+
+    if (password) {
+      const isMatch = verifyPassword(password, user.passwordHash || DEFAULT_SEED_PASSWORD_HASH);
+      if (!isMatch) {
+        return res.status(401).json({ error: 'Incorrect password. Please verify and try again.' });
+      }
+    }
+    // If no password provided (e.g. 1-click demo select), user is allowed
   }
 
   // Set standard httpOnly cookie for 24 hours
@@ -201,7 +297,7 @@ app.post('/api/login', loginLimiter, async (req: Request, res: Response) => {
 
   // Log the login action
   const timestamp = new Date().toISOString();
-  const details = `User ${user.name} logged in successfully via Google Sign-In.`;
+  const details = `User ${user.name} logged in successfully via ${googleToken ? 'Google Sign-In' : 'Email/Password'}.`;
 
   await dbCreateAuditLog({
     id: `log_${Date.now()}`,
@@ -213,7 +309,8 @@ app.post('/api/login', loginLimiter, async (req: Request, res: Response) => {
     details,
   });
 
-  res.json({ user });
+  const { passwordHash, ...userClean } = user;
+  res.json({ user: userClean });
 });
 
 app.post('/api/logout', async (req: Request, res: Response) => {
@@ -268,7 +365,6 @@ app.post('/api/users', async (req: Request, res: Response) => {
     email,
     role: role as UserRole,
     department: department || '',
-    avatarUrl: `https://images.unsplash.com/photo-${1500000000000 + Math.floor(Math.random() * 900000)}?w=150`,
   };
 
   await dbCreateUser(newUser);
@@ -351,6 +447,48 @@ app.put('/api/users/:userId/role', async (req: Request, res: Response) => {
   res.json({ user: updatedUser });
 });
 
+// Delete User (Admin Only)
+app.delete('/api/users/:userId', async (req: Request, res: Response) => {
+  const currentUser = await getSessionUser(req);
+
+  if (!currentUser || currentUser.role !== UserRole.ADMIN) {
+    return res.status(403).json({ error: 'Unauthorized: Admins only' });
+  }
+
+  const { userId } = req.params;
+
+  if (currentUser.id === userId) {
+    return res.status(400).json({ error: 'You cannot delete your own active administrator account' });
+  }
+
+  const allUsers = await dbGetUsers();
+  const targetUser = allUsers.find(u => u.id === userId);
+  if (!targetUser) {
+    return res.status(404).json({ error: 'User not found' });
+  }
+
+  const success = await dbDeleteUser(userId);
+  if (!success) {
+    return res.status(500).json({ error: 'Failed to delete user' });
+  }
+
+  // Audit entry
+  const timestamp = new Date().toISOString();
+  const details = `User "${targetUser.name}" (${targetUser.email}, role: ${targetUser.role}) was deleted from the personnel directory by Admin ${currentUser.name}.`;
+
+  await dbCreateAuditLog({
+    id: `log_${Date.now()}`,
+    action: 'DELETE_USER',
+    actorId: currentUser.id,
+    actorName: currentUser.name,
+    actorEmail: currentUser.email,
+    timestamp,
+    details,
+  });
+
+  res.json({ success: true, deletedUserId: userId });
+});
+
 // Courses API
 app.get('/api/courses', async (req: Request, res: Response) => {
   const courses = await dbGetCourses();
@@ -414,7 +552,9 @@ app.get('/api/offerings', async (req: Request, res: Response) => {
 
   let accessibleOfferings = offerings;
 
-  if (currentUser.role === UserRole.INSTRUCTOR) {
+  if (currentUser.email === 'data-entry@ewubd.edu') {
+    accessibleOfferings = offerings;
+  } else if (currentUser.role === UserRole.INSTRUCTOR) {
     accessibleOfferings = offerings.filter(o => o.instructorId === currentUser.id);
   } else if (currentUser.role === UserRole.AUDITOR) {
     accessibleOfferings = offerings.filter(o => o.auditorId === currentUser.id);
@@ -1186,7 +1326,9 @@ app.get('/api/documents', async (req: Request, res: Response) => {
   // Pre-calculate accessible offerings
   let accessibleOfferingIds = offerings.map(o => o.id);
   
-  if (currentUser.role === UserRole.INSTRUCTOR) {
+  if (currentUser.email === 'data-entry@ewubd.edu') {
+    accessibleOfferingIds = offerings.map(o => o.id);
+  } else if (currentUser.role === UserRole.INSTRUCTOR) {
     accessibleOfferingIds = offerings.filter(o => o.instructorId === currentUser.id).map(o => o.id);
   } else if (currentUser.role === UserRole.AUDITOR) {
     accessibleOfferingIds = offerings.filter(o => o.auditorId === currentUser.id).map(o => o.id);
@@ -1266,11 +1408,12 @@ app.post('/api/documents/upload', upload.single('file'), async (req: Request, re
     return res.status(404).json({ error: 'Course relation is corrupted' });
   }
 
-  // Authorization check: Assigned instructor, Admin, or Dept Head for this course department can upload
+  // Authorization check: Assigned instructor, Admin, Dept Head, or Data Entry assistant can upload
+  const isDataEntry = currentUser.email === 'data-entry@ewubd.edu';
   const isDeptHeadForCourse = currentUser.role === UserRole.DEPT_HEAD && (currentUser.department?.toLowerCase().trim() === course.department?.toLowerCase().trim());
-  const isAuthorized = currentUser.role === UserRole.ADMIN || offering.instructorId === currentUser.id || isDeptHeadForCourse;
+  const isAuthorized = currentUser.role === UserRole.ADMIN || offering.instructorId === currentUser.id || isDeptHeadForCourse || isDataEntry;
   if (!isAuthorized) {
-    return res.status(403).json({ error: 'Access denied: Only the assigned lead instructor or department head can upload materials for this offering' });
+    return res.status(403).json({ error: 'Access denied: Only the assigned lead instructor, department head, or data entry assistant can upload materials for this offering' });
   }
 
   // Calculate version number: query maximum existing version
@@ -2205,8 +2348,13 @@ app.post('/api/reminders/log', async (req: Request, res: Response) => {
   }
 });
 
-// System Audit Log
+// System Audit Log (Admin Only)
 app.get('/api/audit-log', async (req: Request, res: Response) => {
+  const currentUser = await getSessionUser(req);
+  if (!currentUser || currentUser.role !== UserRole.ADMIN) {
+    return res.status(403).json({ error: 'Unauthorized: System Administrators only' });
+  }
+
   const auditLogs = await dbGetAuditLogs();
   // Sort reverse chronological
   const sortedLogs = [...auditLogs].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());

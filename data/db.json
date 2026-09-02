@@ -1,12 +1,60 @@
 {
   "users": [
     {
+      "id": "user_maheen",
+      "name": "Dr. Maheen Islam",
+      "email": "maheen@ewubd.edu",
+      "role": "dept_head",
+      "department": "Department of Computer Science & Engineering",
+      "pendingApproval": false
+    },
+    {
+      "id": "user_mcctuhin",
+      "name": "Rashedul Amin Tuhin",
+      "email": "mcctuhin@ewubd.edu",
+      "role": "instructor",
+      "department": "Department of Computer Science & Engineering",
+      "pendingApproval": false
+    },
+    {
+      "id": "user_taskeed",
+      "name": "Dr. Taskeed Jabid",
+      "email": "taskeed@ewubd.edu",
+      "role": "instructor",
+      "department": "Department of Computer Science & Engineering",
+      "pendingApproval": false
+    },
+    {
+      "id": "user_wasif",
+      "name": "Dr. Ahmed Wasif Reza",
+      "email": "wasif@ewubd.edu",
+      "role": "instructor",
+      "department": "Department of Computer Science & Engineering",
+      "pendingApproval": false
+    },
+    {
+      "id": "user_data_entry",
+      "name": "Universal Data Entry Assistant",
+      "email": "data-entry@ewubd.edu",
+      "role": "instructor",
+      "department": "Department of Computer Science & Engineering",
+      "pendingApproval": false
+    },
+    {
+      "id": "user_dev",
+      "name": "Talha (Developer)",
+      "email": "talharupok2022@gmail.com",
+      "role": "admin",
+      "department": "Department of Computer Science & Engineering",
+      "pendingApproval": false
+    },
+    {
       "id": "user_1",
       "name": "Dr. Alice Smith",
       "email": "alice@university.edu",
       "role": "instructor",
       "department": "Computer Science & Engineering",
-      "avatarUrl": "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150"
+      "pendingApproval": false
     },
     {
       "id": "user_2",
@@ -14,7 +62,7 @@
       "email": "bob@university.edu",
       "role": "instructor",
       "department": "Computer Science & Engineering",
-      "avatarUrl": "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150"
+      "pendingApproval": false
     },
     {
       "id": "user_3",
@@ -22,7 +70,7 @@
       "email": "head@university.edu",
       "role": "dept_head",
       "department": "Computer Science & Engineering",
-      "avatarUrl": "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=150"
+      "pendingApproval": false
     },
     {
       "id": "user_4",
@@ -30,7 +78,7 @@
       "email": "auditor@university.edu",
       "role": "auditor",
       "department": "Academic Registry",
-      "avatarUrl": "https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?w=150"
+      "pendingApproval": false
     },
     {
       "id": "user_5",
@@ -38,7 +86,7 @@
       "email": "admin@university.edu",
       "role": "admin",
       "department": "IT Administration",
-      "avatarUrl": "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150"
+      "pendingApproval": false
     }
   ],
   "courses": [
