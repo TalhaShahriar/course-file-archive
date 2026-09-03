@@ -473,6 +473,16 @@ export function initDatabaseSchema(): Promise<void> {
       await sql`
         ALTER TABLE audit_logs ALTER COLUMN previous_entry_hash DROP NOT NULL
       `;
+      await sql`
+        CREATE INDEX IF NOT EXISTS idx_audit_logs_timestamp ON audit_logs(timestamp DESC)
+      `;
+      await sql`CREATE INDEX IF NOT EXISTS idx_documents_offering_id ON documents(offering_id)`;
+      await sql`CREATE INDEX IF NOT EXISTS idx_documents_category ON documents(category)`;
+      await sql`CREATE INDEX IF NOT EXISTS idx_documents_status ON documents(status)`;
+      await sql`CREATE INDEX IF NOT EXISTS idx_documents_is_deleted ON documents(is_deleted)`;
+      await sql`CREATE INDEX IF NOT EXISTS idx_offerings_instructor_id ON offerings(instructor_id)`;
+      await sql`CREATE INDEX IF NOT EXISTS idx_offerings_auditor_id ON offerings(auditor_id)`;
+      await sql`CREATE INDEX IF NOT EXISTS idx_offerings_course_id ON offerings(course_id)`;
 
       // Create notifications table
       await sql`
@@ -607,7 +617,9 @@ function writeLocalDB(data: Database) {
     if (!fs.existsSync(DATA_DIR)) {
       fs.mkdirSync(DATA_DIR, { recursive: true });
     }
-    fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2), 'utf-8');
+    const tempFile = `${DB_FILE}.${Date.now()}.${Math.random().toString(36).substring(2, 8)}.tmp`;
+    fs.writeFileSync(tempFile, JSON.stringify(data, null, 2), 'utf-8');
+    fs.renameSync(tempFile, DB_FILE);
   } catch (error) {
     console.error('Error writing local db.json:', error);
   }
@@ -736,7 +748,7 @@ export async function dbDeleteUser(userId: string): Promise<boolean> {
         o.instructorId = '';
       }
       if (o.auditorId === userId) {
-        o.auditorId = null;
+        o.auditorId = undefined;
       }
     });
   }
@@ -829,6 +841,41 @@ export async function dbUpdateOfferingAuditor(offeringId: string, auditorId: str
   return offering;
 }
 
+export async function dbGetOfferingById(id: string): Promise<CourseOffering | null> {
+  if (sql) {
+    const rows = await sql`
+      SELECT 
+        id, 
+        course_id as "courseId", 
+        academic_year as "academicYear", 
+        term, 
+        section, 
+        instructor_id as "instructorId",
+        auditor_id as "auditorId",
+        submission_status as "submissionStatus",
+        submitted_at as "submittedAt",
+        submitter_signature_url as "submitterSignatureUrl",
+        approved_at as "approvedAt",
+        approver_signature_url as "approverSignatureUrl"
+      FROM offerings 
+      WHERE id = ${id}
+      LIMIT 1
+    `;
+    return (rows[0] as CourseOffering) || null;
+  }
+  const db = readLocalDB();
+  return (db.offerings || []).find(o => o.id === id) || null;
+}
+
+export async function dbGetCourseById(id: string): Promise<Course | null> {
+  if (sql) {
+    const rows = await sql`SELECT id, code, title, department FROM courses WHERE id = ${id} LIMIT 1`;
+    return (rows[0] as Course) || null;
+  }
+  const db = readLocalDB();
+  return db.courses.find(c => c.id === id) || null;
+}
+
 export async function dbUpdateOfferingStatus(
   offeringId: string, 
   updates: {
@@ -840,7 +887,6 @@ export async function dbUpdateOfferingStatus(
   }
 ): Promise<CourseOffering | null> {
   if (sql) {
-    // Just fetch existing first for simplicity, or do a dynamic update
     const rows = await sql`
       UPDATE offerings 
       SET 
@@ -993,6 +1039,34 @@ export async function dbGetDocuments(): Promise<Document[]> {
   }
   const db = readLocalDB();
   return db.documents.filter(d => !d.isDeleted);
+}
+
+export async function dbGetDocumentById(id: string): Promise<Document | null> {
+  if (sql) {
+    const rows = await sql`
+      SELECT 
+        id, 
+        offering_id as "offeringId", 
+        category, 
+        version, 
+        is_current as "isCurrent", 
+        file_name as "fileName", 
+        file_hash as "fileHash", 
+        uploaded_by as "uploadedBy", 
+        uploaded_at as "uploadedAt", 
+        storage_path as "storagePath", 
+        status, 
+        feedback,
+        is_deleted as "isDeleted",
+        deleted_at as "deletedAt"
+      FROM documents 
+      WHERE id = ${id}
+      LIMIT 1
+    `;
+    return (rows[0] as Document) || null;
+  }
+  const db = readLocalDB();
+  return db.documents.find(d => d.id === id) || null;
 }
 
 export async function dbGetTrashDocuments(): Promise<Document[]> {
@@ -1179,7 +1253,35 @@ export async function dbPurgeDocument(id: string): Promise<Document | null> {
 }
 
 // AUDIT LOGS
-export async function dbGetAuditLogs(): Promise<AuditLogEntry[]> {
+export interface GetAuditLogsOptions {
+  page?: number;
+  limit?: number;
+  search?: string;
+  action?: string;
+  actorEmail?: string;
+  startDate?: string;
+  endDate?: string;
+}
+
+export interface PaginatedAuditLogs {
+  auditLogs: AuditLogEntry[];
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+}
+
+export async function dbGetAuditLogs(options?: GetAuditLogsOptions): Promise<PaginatedAuditLogs> {
+  const page = Math.max(1, Number(options?.page) || 1);
+  const isUnlimited = options?.limit === 0 || options?.limit === -1;
+  const limit = isUnlimited ? 100000 : Math.max(1, Number(options?.limit) || 25);
+  const offset = (page - 1) * limit;
+  const searchPattern = options?.search && options.search.trim().length > 0 ? `%${options.search.trim()}%` : '';
+  const actionFilter = options?.action?.trim() || '';
+  const actorFilter = options?.actorEmail?.trim() || '';
+  const startDate = options?.startDate?.trim() || '';
+  const endDate = options?.endDate?.trim() || '';
+
   if (sql) {
     const rows = await sql`
       SELECT 
@@ -1195,16 +1297,105 @@ export async function dbGetAuditLogs(): Promise<AuditLogEntry[]> {
         entry_hash as "entryHash",
         previous_entry_hash as "previousEntryHash"
       FROM audit_logs
+      WHERE (${searchPattern} = '' OR details ILIKE ${searchPattern} OR actor_email ILIKE ${searchPattern} OR actor_name ILIKE ${searchPattern} OR target_document_name ILIKE ${searchPattern})
+        AND (${actionFilter} = '' OR action = ${actionFilter})
+        AND (${actorFilter} = '' OR actor_email = ${actorFilter})
+        AND (${startDate} = '' OR timestamp >= ${startDate})
+        AND (${endDate} = '' OR timestamp <= ${endDate})
+      ORDER BY timestamp DESC
+      LIMIT ${limit} OFFSET ${offset}
     `;
-    return rows as AuditLogEntry[];
+
+    const countResult = await sql`
+      SELECT COUNT(*)::int as count FROM audit_logs
+      WHERE (${searchPattern} = '' OR details ILIKE ${searchPattern} OR actor_email ILIKE ${searchPattern} OR actor_name ILIKE ${searchPattern} OR target_document_name ILIKE ${searchPattern})
+        AND (${actionFilter} = '' OR action = ${actionFilter})
+        AND (${actorFilter} = '' OR actor_email = ${actorFilter})
+        AND (${startDate} = '' OR timestamp >= ${startDate})
+        AND (${endDate} = '' OR timestamp <= ${endDate})
+    `;
+
+    const total = countResult[0]?.count ? Number(countResult[0].count) : rows.length;
+    const totalPages = Math.max(1, Math.ceil(total / limit));
+
+    return {
+      auditLogs: rows as AuditLogEntry[],
+      total,
+      page,
+      limit: isUnlimited ? total : limit,
+      totalPages,
+    };
   }
+
   const db = readLocalDB();
-  return db.auditLogs;
+  let allLogs = [...db.auditLogs].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+
+  if (options?.search) {
+    const q = options.search.toLowerCase().trim();
+    allLogs = allLogs.filter(l => 
+      (l.details && l.details.toLowerCase().includes(q)) ||
+      (l.actorEmail && l.actorEmail.toLowerCase().includes(q)) ||
+      (l.actorName && l.actorName.toLowerCase().includes(q)) ||
+      (l.targetDocumentName && l.targetDocumentName.toLowerCase().includes(q))
+    );
+  }
+
+  if (actionFilter) {
+    allLogs = allLogs.filter(l => l.action === actionFilter);
+  }
+
+  if (actorFilter) {
+    allLogs = allLogs.filter(l => l.actorEmail.toLowerCase() === actorFilter.toLowerCase());
+  }
+
+  if (startDate) {
+    allLogs = allLogs.filter(l => l.timestamp >= startDate);
+  }
+
+  if (endDate) {
+    allLogs = allLogs.filter(l => l.timestamp <= endDate);
+  }
+
+  const total = allLogs.length;
+  const totalPages = Math.max(1, Math.ceil(total / limit));
+  const pagedLogs = isUnlimited ? allLogs : allLogs.slice(offset, offset + limit);
+
+  return {
+    auditLogs: pagedLogs,
+    total,
+    page,
+    limit: isUnlimited ? total : limit,
+    totalPages,
+  };
 }
 
 export async function dbCreateAuditLog(log: AuditLogEntry): Promise<AuditLogEntry> {
-  const calculatedHash = log.entryHash || '';
-  const prevHash = log.previousEntryHash || '';
+  let prevHash = log.previousEntryHash || '';
+  
+  if (!prevHash) {
+    if (sql) {
+      try {
+        const latest = await sql`SELECT entry_hash as "entryHash" FROM audit_logs WHERE entry_hash IS NOT NULL AND entry_hash != '' ORDER BY timestamp DESC LIMIT 1`;
+        if (latest && latest.length > 0 && latest[0].entryHash) {
+          prevHash = latest[0].entryHash;
+        }
+      } catch {
+        // Fallback if column empty
+      }
+    } else {
+      const db = readLocalDB();
+      for (let i = db.auditLogs.length - 1; i >= 0; i--) {
+        if (db.auditLogs[i].entryHash) {
+          prevHash = db.auditLogs[i].entryHash!;
+          break;
+        }
+      }
+    }
+  }
+
+  // Calculate genuine SHA-256 cryptographic chain hash
+  const payload = `${prevHash}|${log.timestamp}|${log.action}|${log.actorId}|${log.actorEmail}|${log.details}|${log.targetDocumentId || ''}`;
+  const calculatedHash = log.entryHash || crypto.createHash('sha256').update(payload).digest('hex');
 
   const fullLog: AuditLogEntry = {
     ...log,

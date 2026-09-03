@@ -23,6 +23,13 @@
   --color-quaternary: var(--quaternary);
   --color-quaternary-light: var(--quaternary-light);
 
+  /* Subtle and divider utilities mapping */
+  --color-subtle: var(--border-subtle);
+  --color-subtle-hover: var(--border-subtle-hover);
+  --color-divider: var(--border-divider);
+  --color-brand-divider: var(--border-brand-divider);
+  --color-error-divider: var(--border-error-divider);
+
   --color-border-subtle: var(--border-subtle);
   --color-border-subtle-hover: var(--border-subtle-hover);
   --color-border-divider: var(--border-divider);
@@ -118,58 +125,176 @@
   }
 
   .dark {
-    /* Dark Mode Theme Tuning for WCAG Contrast */
-    --surface: #1e293b; /* slate-800 */
-    --background: #0f172a; /* slate-900 */
-    --surface-hover: #334155; /* slate-700 */
+    /* Refined Obsidian / Midnight Navy Palette */
+    --background: #090d16; /* Deep obsidian navy background */
+    --surface: #121a2c; /* Crisp elevated surface */
+    --surface-hover: #19233a; /* Smooth elevated hover */
     
     --inverse-surface: #1e293b;
-    --inverse-surface-dark: #090d16;
+    --inverse-surface-dark: #05080f;
 
-    --primary: #f8fafc; /* slate-50 */
-    --primary-muted: #f1f5f9; /* slate-100 */
-    --secondary: #cbd5e1; /* slate-300 */
-    --secondary-muted: #94a3b8; /* slate-400 */
-    --tertiary: #94a3b8; /* slate-400 */
-    --quaternary: #64748b; /* slate-500 */
-    --quaternary-light: #94a3b8; /* slate-400 */
+    --primary: #f8fafc; /* Crisp white */
+    --primary-muted: #e2e8f0; /* Soft light slate */
+    --secondary: #cbd5e1; /* Secondary slate */
+    --secondary-muted: #94a3b8; /* Muted slate */
+    --tertiary: #94a3b8; /* Subtle metadata */
+    --quaternary: #64748b; /* Inactive text */
+    --quaternary-light: #475569;
 
-    --border-subtle: #334155; /* slate-700 */
-    --border-subtle-hover: #475569; /* slate-600 */
-    --border-divider: #1e293b; /* slate-800 */
+    /* Micro-translucent borders that blend seamlessly without harsh wireframing */
+    --border-subtle: rgba(255, 255, 255, 0.08);
+    --border-subtle-hover: rgba(255, 255, 255, 0.16);
+    --border-divider: rgba(255, 255, 255, 0.05);
 
-    /* Ensure indicators are visible and pass WCAG AA */
-    --success-subtle: rgba(16, 185, 129, 0.15); /* emerald transparent */
-    --success-subtle-hover: rgba(16, 185, 129, 0.25);
-    --success: #34d399; /* emerald-400 */
-    --success-muted: #34d399; /* emerald-400 */
-    --success-bold: #34d399; /* emerald-400 */
-    --success-bolder: #6ee7b7; /* emerald-300 */
-    --border-success-subtle: rgba(16, 185, 129, 0.3);
+    /* WCAG AA Compliant Vibrant Indicators */
+    --success-subtle: rgba(16, 185, 129, 0.12);
+    --success-subtle-hover: rgba(16, 185, 129, 0.22);
+    --success: #34d399;
+    --success-muted: #34d399;
+    --success-bold: #34d399;
+    --success-bolder: #6ee7b7;
+    --border-success-subtle: rgba(52, 211, 153, 0.25);
     --border-success: #10b981;
 
-    --error-subtle: rgba(244, 63, 94, 0.15);
-    --error: #fb7185; /* rose-400 */
-    --error-muted: #f43f5e; /* rose-500 */
-    --error-bold: #fb7185; /* rose-400 */
-    --error-bolder: #fda4af; /* rose-300 */
-    --border-error-subtle: rgba(244, 63, 94, 0.3);
-    --border-error-divider: rgba(244, 63, 94, 0.2);
+    --error-subtle: rgba(244, 63, 94, 0.12);
+    --error: #fb7185;
+    --error-muted: #f43f5e;
+    --error-bold: #fb7185;
+    --error-bolder: #fda4af;
+    --border-error-subtle: rgba(251, 113, 133, 0.25);
+    --border-error-divider: rgba(251, 113, 133, 0.15);
 
-    --warning-subtle: rgba(245, 158, 11, 0.15);
-    --warning: #fbbf24; /* amber-400 */
-    --warning-bold: #fbbf24; /* amber-400 */
-    --border-warning-subtle: rgba(245, 158, 11, 0.3);
+    --warning-subtle: rgba(245, 158, 11, 0.12);
+    --warning: #fbbf24;
+    --warning-bold: #fbbf24;
+    --border-warning-subtle: rgba(251, 191, 36, 0.25);
 
-    --brand-subtle: rgba(99, 102, 241, 0.15);
-    --brand: #818cf8; /* indigo-400 */
-    --brand-hover: #6366f1; /* indigo-500 */
-    --brand-muted: #6366f1; /* indigo-500 */
-    --brand-bold: #c7d2fe; /* indigo-200 */
-    --brand-bolder: #c7d2fe; /* indigo-200 */
-    --border-brand-subtle: rgba(99, 102, 241, 0.3);
-    --border-brand-divider: rgba(99, 102, 241, 0.2);
+    --brand-subtle: rgba(99, 102, 241, 0.14);
+    --brand: #818cf8;
+    --brand-hover: #6366f1;
+    --brand-muted: #6366f1;
+    --brand-bold: #c7d2fe;
+    --brand-bolder: #c7d2fe;
+    --border-brand-subtle: rgba(99, 102, 241, 0.28);
+    --border-brand-divider: rgba(99, 102, 241, 0.18);
 
-    --overlay: rgba(0, 0, 0, 0.7);
+    --overlay: rgba(0, 0, 0, 0.75);
   }
 }
+
+@layer utilities {
+  /* Direct border-color utilities to prevent currentColor fallbacks */
+  .border-subtle {
+    border-color: var(--border-subtle);
+  }
+  .border-subtle-hover:hover {
+    border-color: var(--border-subtle-hover);
+  }
+  .border-divider {
+    border-color: var(--border-divider);
+  }
+  .border-brand-divider {
+    border-color: var(--border-brand-divider);
+  }
+  .border-error-divider {
+    border-color: var(--border-error-divider);
+  }
+}
+
+/* Ambient Background Lighting in Dark Mode */
+.dark body,
+.dark .min-h-screen {
+  background-color: var(--background);
+  background-image: 
+    radial-gradient(ellipse 80% 50% at 50% -20%, rgba(99, 102, 241, 0.12), transparent),
+    radial-gradient(ellipse 60% 40% at 100% 0%, rgba(56, 189, 248, 0.05), transparent);
+  background-attachment: fixed;
+}
+
+/* Form Controls Inset Depth in Dark Mode */
+.dark input:not([type="checkbox"]):not([type="radio"]),
+.dark select,
+.dark textarea {
+  background-color: rgba(9, 13, 22, 0.75);
+  border-color: rgba(255, 255, 255, 0.1);
+  color: var(--primary-muted);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.dark input:not([type="checkbox"]):not([type="radio"]):focus,
+.dark select:focus,
+.dark textarea:focus {
+  border-color: var(--brand);
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.25);
+}
+
+.dark select option {
+  background-color: #121a2c;
+  color: #f8fafc;
+}
+
+/* Custom Sleek Dark Scrollbar */
+.dark ::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.dark ::-webkit-scrollbar-track {
+  background: transparent;
+}
+.dark ::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 9999px;
+}
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.22);
+}
+
+/* Subtle Card Glow & Elevation on Hover */
+.dark .bg-surface {
+  box-shadow: 0 2px 8px -1px rgba(0, 0, 0, 0.35);
+}
+.dark .group.bg-surface:hover {
+  box-shadow: 0 10px 25px -4px rgba(0, 0, 0, 0.5), 0 0 20px -2px rgba(99, 102, 241, 0.12);
+}
+
+/* ==========================================================================
+   ACADEMIC ACCREDITATION & MANIFEST PRINT STYLES
+   ========================================================================== */
+@media print {
+  body {
+    background: #ffffff !important;
+    color: #000000 !important;
+    font-size: 11pt !important;
+  }
+
+  /* Hide interactive chrome, notifications, floating controls, and backgrounds */
+  header,
+  nav,
+  aside,
+  button,
+  .fixed,
+  .sticky,
+  input,
+  select {
+    display: none !important;
+  }
+
+  /* Ensure clean table borders and proper pagination breaks for official records */
+  table {
+    width: 100% !important;
+    border-collapse: collapse !important;
+    page-break-inside: auto;
+  }
+
+  tr {
+    page-break-inside: avoid;
+    page-break-after: auto;
+  }
+
+  th, td {
+    border: 1px solid #cbd5e1 !important;
+    padding: 6px 10px !important;
+    color: #000000 !important;
+  }
+}
+

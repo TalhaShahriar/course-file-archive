@@ -66,6 +66,7 @@ import {
   LogIn,
   ArrowRight
 } from 'lucide-react';
+import { Pagination } from './components/Pagination';
 
 import { 
   User as UserType, 
@@ -345,6 +346,36 @@ export default function App() {
   const [archiveTermFilter, setArchiveTermFilter] = useState<string>('');
   const [archiveDeptFilter, setArchiveDeptFilter] = useState<string>('');
   const [archiveViewLayout, setArchiveViewLayout] = useState<'table' | 'cards' | 'grouped_course' | 'grouped_category'>('table');
+  const [archivePage, setArchivePage] = useState<number>(1);
+  const [archivePageSize, setArchivePageSize] = useState<number>(24);
+
+  // System Audit Log (Ledger) Server-Side Pagination & Filtering State
+  const [ledgerLogs, setLedgerLogs] = useState<AuditLogEntry[]>([]);
+  const [ledgerTotal, setLedgerTotal] = useState<number>(0);
+  const [ledgerPage, setLedgerPage] = useState<number>(1);
+  const [ledgerLimit, setLedgerLimit] = useState<number>(25);
+  const [ledgerTotalPages, setLedgerTotalPages] = useState<number>(1);
+  const [ledgerSearch, setLedgerSearch] = useState<string>('');
+  const [ledgerAction, setLedgerAction] = useState<string>('');
+  const [ledgerDateRange, setLedgerDateRange] = useState<'all' | 'today' | '7d' | '30d'>('all');
+  const [ledgerLayout, setLedgerLayout] = useState<'table' | 'cards'>('table');
+  const [ledgerLoading, setLedgerLoading] = useState<boolean>(false);
+
+  // User Management Pagination & Filtering State
+  const [userSearch, setUserSearch] = useState<string>('');
+  const [userRoleFilter, setUserRoleFilter] = useState<string>('all');
+  const [userStatusFilter, setUserStatusFilter] = useState<'all' | 'active' | 'pending'>('all');
+  const [userPage, setUserPage] = useState<number>(1);
+  const [userPageSize, setUserPageSize] = useState<number>(12);
+
+  // Trash Hub Pagination & Filtering State
+  const [trashSearch, setTrashSearch] = useState<string>('');
+  const [trashPage, setTrashPage] = useState<number>(1);
+  const [trashPageSize, setTrashPageSize] = useState<number>(15);
+
+  // Course Offerings (Directory) Pagination State
+  const [offeringsPage, setOfferingsPage] = useState<number>(1);
+  const [offeringsPageSize, setOfferingsPageSize] = useState<number>(12);
 
   // Global Filtering State for Course Offerings list (dept_head and admin)
   const [browseMode, setBrowseMode] = useState<'global' | 'structured'>('structured');
@@ -943,12 +974,20 @@ export default function App() {
         fetch('/api/courses'),
         fetch('/api/offerings'),
         fetch('/api/documents'),
-        currentUser?.role === UserRole.ADMIN ? fetch('/api/audit-log') : Promise.resolve(null),
+        currentUser?.role === UserRole.ADMIN ? fetch('/api/audit-log?limit=all') : Promise.resolve(null),
         fetch('/api/users'),
         fetch('/api/categories?all=true'),
         fetch('/api/trash'),
         fetch('/api/notifications')
       ]);
+
+      if (coursesRes.status === 401 || offeringsRes.status === 401 || docsRes.status === 401) {
+        if (currentUser) {
+          showNotification('Your session has expired. Please sign in again.', 'error');
+          setCurrentUser(null);
+        }
+        return;
+      }
 
       const coursesData = await coursesRes.json();
       const offeringsData = await offeringsRes.json();
@@ -963,6 +1002,11 @@ export default function App() {
       setOfferings(offeringsData.offerings || []);
       setDocuments(docsData.documents || []);
       setAuditLogs(logsData.auditLogs || []);
+      if (logsData.auditLogs) {
+        setLedgerLogs(logsData.auditLogs.slice(0, 25));
+        setLedgerTotal(logsData.total || logsData.auditLogs.length);
+        setLedgerTotalPages(logsData.totalPages || Math.max(1, Math.ceil(logsData.auditLogs.length / 25)));
+      }
       setUsersList(usersData.users || []);
       if (catData.categories && catData.categories.length > 0) {
         setCategoriesList(catData.categories);
@@ -1042,6 +1086,79 @@ export default function App() {
     } catch (e) {
       console.error('Error deleting notification', e);
     }
+  };
+
+  // Fetch Server-Side Paginated Audit Logs for Ledger
+  const fetchLedgerLogs = async (
+    page = ledgerPage,
+    limit = ledgerLimit,
+    search = ledgerSearch,
+    action = ledgerAction,
+    dateRange = ledgerDateRange
+  ) => {
+    if (!currentUser || currentUser.role !== UserRole.ADMIN) return;
+    setLedgerLoading(true);
+    try {
+      const params = new URLSearchParams();
+      params.set('page', String(page));
+      params.set('limit', String(limit));
+      if (search.trim()) params.set('search', search.trim());
+      if (action.trim()) params.set('action', action.trim());
+
+      if (dateRange !== 'all') {
+        const now = new Date();
+        if (dateRange === 'today') {
+          const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
+          params.set('startDate', startOfDay);
+        } else if (dateRange === '7d') {
+          const past7 = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
+          params.set('startDate', past7);
+        } else if (dateRange === '30d') {
+          const past30 = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString();
+          params.set('startDate', past30);
+        }
+      }
+
+      const res = await fetch(`/api/audit-log?${params.toString()}`);
+      if (res.ok) {
+        const data = await res.json();
+        setLedgerLogs(data.auditLogs || []);
+        setLedgerTotal(data.total || 0);
+        setLedgerPage(data.page || 1);
+        setLedgerLimit(data.limit || limit);
+        setLedgerTotalPages(data.totalPages || 1);
+      }
+    } catch (err) {
+      console.error('Failed to fetch ledger logs', err);
+    } finally {
+      setLedgerLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'ledger' && currentUser?.role === UserRole.ADMIN) {
+      const timeoutId = setTimeout(() => {
+        fetchLedgerLogs(ledgerPage, ledgerLimit, ledgerSearch, ledgerAction, ledgerDateRange);
+      }, 200);
+      return () => clearTimeout(timeoutId);
+    }
+  }, [activeTab, ledgerPage, ledgerLimit, ledgerSearch, ledgerAction, ledgerDateRange, currentUser]);
+
+  const exportLedgerCSV = () => {
+    const params = new URLSearchParams();
+    if (ledgerSearch.trim()) params.set('search', ledgerSearch.trim());
+    if (ledgerAction.trim()) params.set('action', ledgerAction.trim());
+    if (ledgerDateRange !== 'all') {
+      const now = new Date();
+      if (ledgerDateRange === 'today') {
+        params.set('startDate', new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString());
+      } else if (ledgerDateRange === '7d') {
+        params.set('startDate', new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString());
+      } else if (ledgerDateRange === '30d') {
+        params.set('startDate', new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString());
+      }
+    }
+    window.open(`/api/audit-log/export?${params.toString()}`, '_blank');
   };
 
   const handleBatchSelectiveExport = async () => {
@@ -1639,7 +1756,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
       const res = await fetch('/api/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email }),
+        body: JSON.stringify({ email, password: 'ewu123456' }),
       });
       const data = await res.json();
       if (res.ok) {
@@ -2285,6 +2402,55 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
     return matchesSearch && matchesCourse && matchesCategory && matchesStatus && matchesYear && matchesTerm && matchesDept;
   });
 
+  // Archive pagination slicing & auto-reset
+  const archiveTotalPages = Math.max(1, Math.ceil(filteredDocs.length / archivePageSize));
+  const paginatedArchiveDocs = filteredDocs.slice((archivePage - 1) * archivePageSize, archivePage * archivePageSize);
+
+  useEffect(() => {
+    setArchivePage(1);
+  }, [archiveSearch, archiveCourseFilter, archiveCategoryFilter, archiveStatusFilter, archiveYearFilter, archiveTermFilter, archiveDeptFilter]);
+
+  // User Management filtering & pagination slicing
+  const filteredUsers = usersList.filter(u => {
+    if (userSearch.trim()) {
+      const q = userSearch.toLowerCase().trim();
+      const matchName = u.name?.toLowerCase().includes(q);
+      const matchEmail = u.email?.toLowerCase().includes(q);
+      const matchDept = u.department?.toLowerCase().includes(q);
+      if (!matchName && !matchEmail && !matchDept) return false;
+    }
+    if (userRoleFilter !== 'all' && u.role !== userRoleFilter) return false;
+    if (userStatusFilter === 'active' && u.pendingApproval) return false;
+    if (userStatusFilter === 'pending' && !u.pendingApproval) return false;
+    return true;
+  });
+  const userTotalPages = Math.max(1, Math.ceil(filteredUsers.length / userPageSize));
+  const paginatedUsers = filteredUsers.slice((userPage - 1) * userPageSize, userPage * userPageSize);
+
+  useEffect(() => {
+    setUserPage(1);
+  }, [userSearch, userRoleFilter, userStatusFilter]);
+
+  // Trash filtering & pagination slicing
+  const filteredTrash = trashDocuments.filter(doc => {
+    if (!trashSearch.trim()) return true;
+    const q = trashSearch.toLowerCase().trim();
+    const offering = offerings.find(o => o.id === doc.offeringId);
+    const course = offering ? courses.find(c => c.id === offering.courseId) : null;
+    return (
+      (doc.fileName && doc.fileName.toLowerCase().includes(q)) ||
+      (course && course.code.toLowerCase().includes(q)) ||
+      (doc.uploadedBy && doc.uploadedBy.toLowerCase().includes(q)) ||
+      (doc.category && doc.category.toLowerCase().includes(q))
+    );
+  });
+  const trashTotalPages = Math.max(1, Math.ceil(filteredTrash.length / trashPageSize));
+  const paginatedTrash = filteredTrash.slice((trashPage - 1) * trashPageSize, trashPage * trashPageSize);
+
+  useEffect(() => {
+    setTrashPage(1);
+  }, [trashSearch]);
+
   const accessibleOfferings = getAccessibleOfferings();
 
   const uniqueSessions = Array.from(
@@ -2344,6 +2510,14 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
 
     return true;
   });
+
+  // Auto-reset Course Directory pagination on filter change
+  useEffect(() => {
+    setOfferingsPage(1);
+  }, [globalCourseCode, globalSession, globalInstructor, globalCategory, globalCategoryStatus, onlyCore8Filter]);
+
+  const offeringsTotalPages = Math.max(1, Math.ceil(filteredOfferings.length / offeringsPageSize));
+  const paginatedOfferings = filteredOfferings.slice((offeringsPage - 1) * offeringsPageSize, offeringsPage * offeringsPageSize);
 
   const matchingFilteredDocs = allDocs.filter(doc => {
     const matchingOffering = filteredOfferings.find(o => o.id === doc.offeringId);
@@ -2744,7 +2918,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
       )}
 
       {/* Header Navbar */}
-      <header className="bg-surface border-b border-subtle px-3 sm:px-6 py-2.5 sm:py-3.5 flex items-center justify-between sticky top-0 z-40 shadow-sm min-h-[58px] sm:min-h-[64px] shrink-0">
+      <header className="bg-surface/90 backdrop-blur-md border-b border-subtle px-3 sm:px-6 py-2.5 sm:py-3.5 flex items-center justify-between sticky top-0 z-40 shadow-xs min-h-[58px] sm:min-h-[64px] shrink-0">
         <div className="flex items-center gap-2 sm:gap-3 min-w-0">
           {/* Mobile navigation toggle */}
           <button
@@ -2757,7 +2931,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
             {showMobileMenu ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
           </button>
 
-          <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-brand flex items-center justify-center text-white font-bold shadow-sm shrink-0">
+          <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-indigo-600 flex items-center justify-center text-white font-bold shadow-sm shadow-indigo-500/25 shrink-0">
             <span className="text-xs sm:text-sm">CFA</span>
           </div>
           <div className="min-w-0">
@@ -2956,7 +3130,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
             showMobileMenu
               ? 'fixed inset-y-0 left-0 z-50 w-72 max-w-[85vw] shadow-2xl flex'
               : 'hidden md:flex'
-          } w-full md:w-64 bg-slate-900 text-slate-300 border-b md:border-b-0 md:border-r border-slate-800 p-4 shrink-0 flex-col justify-between transition-all duration-200`}
+          } w-full md:w-64 bg-slate-900/95 dark:bg-[#0b0f1a] text-slate-300 border-b md:border-b-0 md:border-r border-slate-800 dark:border-white/5 p-4 shrink-0 flex-col justify-between transition-all duration-200`}
         >
           <div className="space-y-6">
             <div className="flex items-center justify-between md:hidden pb-3 border-b border-slate-700/50">
@@ -2982,7 +3156,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                   setShowMobileMenu(false);
                 }}
                 className={`w-full flex items-center justify-between px-3 py-2.5 min-h-[44px] rounded-lg text-xs font-semibold transition cursor-pointer ${
-                  activeTab === 'courses' ? 'bg-white/10 text-white border border-white/10' : 'text-quaternary hover:text-white hover:bg-white/5'
+                  activeTab === 'courses' ? 'bg-brand/20 text-white border border-brand/35 shadow-xs shadow-indigo-500/10 font-bold' : 'text-quaternary hover:text-white hover:bg-white/5'
                 }`}
               >
                 <span className="flex items-center gap-2.5">
@@ -2995,7 +3169,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                 <button
                   onClick={() => { setActiveTab('desk'); setSelectedOffering(null); setShowMobileMenu(false); }}
                   className={`w-full flex items-center justify-between px-3 py-2.5 min-h-[44px] rounded-lg text-xs font-semibold transition cursor-pointer ${
-                    activeTab === 'desk' ? 'bg-white/10 text-white border border-white/10' : 'text-quaternary hover:text-white hover:bg-white/5'
+                    activeTab === 'desk' ? 'bg-brand/20 text-white border border-brand/35 shadow-xs shadow-indigo-500/10 font-bold' : 'text-quaternary hover:text-white hover:bg-white/5'
                   }`}
                 >
                   <span className="flex items-center gap-2.5">
@@ -3011,7 +3185,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                 <button
                   onClick={() => { setActiveTab('review'); setSelectedOffering(null); setShowMobileMenu(false); }}
                   className={`w-full flex items-center justify-between px-3 py-2.5 min-h-[44px] rounded-lg text-xs font-semibold transition cursor-pointer ${
-                    activeTab === 'review' ? 'bg-white/10 text-white border border-white/10' : 'text-quaternary hover:text-white hover:bg-white/5'
+                    activeTab === 'review' ? 'bg-brand/20 text-white border border-brand/35 shadow-xs shadow-indigo-500/10 font-bold' : 'text-quaternary hover:text-white hover:bg-white/5'
                   }`}
                 >
                   <span className="flex items-center gap-2.5">
@@ -3036,7 +3210,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
               <button
                 onClick={() => { setActiveTab('archive'); setSelectedOffering(null); setShowMobileMenu(false); }}
                 className={`w-full flex items-center justify-between px-3 py-2.5 min-h-[44px] rounded-lg text-xs font-semibold transition cursor-pointer ${
-                  activeTab === 'archive' ? 'bg-white/10 text-white border border-white/10' : 'text-quaternary hover:text-white hover:bg-white/5'
+                  activeTab === 'archive' ? 'bg-brand/20 text-white border border-brand/35 shadow-xs shadow-indigo-500/10 font-bold' : 'text-quaternary hover:text-white hover:bg-white/5'
                 }`}
               >
                 <span className="flex items-center gap-2.5">
@@ -3049,7 +3223,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                 <button
                   onClick={() => { setActiveTab('ledger'); setSelectedOffering(null); setShowMobileMenu(false); }}
                   className={`w-full flex items-center justify-between px-3 py-2.5 min-h-[44px] rounded-lg text-xs font-semibold transition cursor-pointer ${
-                    activeTab === 'ledger' ? 'bg-white/10 text-white border border-white/10' : 'text-quaternary hover:text-white hover:bg-white/5'
+                    activeTab === 'ledger' ? 'bg-brand/20 text-white border border-brand/35 shadow-xs shadow-indigo-500/10 font-bold' : 'text-quaternary hover:text-white hover:bg-white/5'
                   }`}
                 >
                   <span className="flex items-center gap-2.5">
@@ -3063,7 +3237,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                 <button
                   onClick={() => { setActiveTab('users'); setSelectedOffering(null); setShowMobileMenu(false); }}
                   className={`w-full flex items-center justify-between px-3 py-2.5 min-h-[44px] rounded-lg text-xs font-semibold transition cursor-pointer ${
-                    activeTab === 'users' ? 'bg-white/10 text-white border border-white/10' : 'text-quaternary hover:text-white hover:bg-white/5'
+                    activeTab === 'users' ? 'bg-brand/20 text-white border border-brand/35 shadow-xs shadow-indigo-500/10 font-bold' : 'text-quaternary hover:text-white hover:bg-white/5'
                   }`}
                 >
                   <span className="flex items-center gap-2.5">
@@ -3077,7 +3251,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                 <button
                   onClick={() => { setActiveTab('categories'); setSelectedOffering(null); setShowMobileMenu(false); }}
                   className={`w-full flex items-center justify-between px-3 py-2.5 min-h-[44px] rounded-lg text-xs font-semibold transition cursor-pointer ${
-                    activeTab === 'categories' ? 'bg-white/10 text-white border border-white/10' : 'text-quaternary hover:text-white hover:bg-white/5'
+                    activeTab === 'categories' ? 'bg-brand/20 text-white border border-brand/35 shadow-xs shadow-indigo-500/10 font-bold' : 'text-quaternary hover:text-white hover:bg-white/5'
                   }`}
                 >
                   <span className="flex items-center gap-2.5">
@@ -3093,7 +3267,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                 <button
                   onClick={() => { setActiveTab('trash'); setSelectedOffering(null); setShowMobileMenu(false); }}
                   className={`w-full flex items-center justify-between px-3 py-2.5 min-h-[44px] rounded-lg text-xs font-semibold transition cursor-pointer ${
-                    activeTab === 'trash' ? 'bg-white/10 text-white border border-white/10' : 'text-quaternary hover:text-white hover:bg-white/5'
+                    activeTab === 'trash' ? 'bg-brand/20 text-white border border-brand/35 shadow-xs shadow-indigo-500/10 font-bold' : 'text-quaternary hover:text-white hover:bg-white/5'
                   }`}
                 >
                   <span className="flex items-center gap-2.5">
@@ -3243,10 +3417,10 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                                 setBrowseMode('global');
                               }
                             }}
-                            className={`px-2 py-0.5 rounded text-xs font-mono font-bold transition border cursor-pointer ${
+                            className={`px-2.5 py-0.5 rounded-md text-xs font-mono font-bold transition-all border cursor-pointer ${
                               isSelected
-                                ? 'bg-brand text-white border-brand'
-                                : 'bg-background hover:bg-surface-hover text-secondary border-subtle'
+                                ? 'bg-brand text-white border-brand shadow-xs shadow-indigo-500/25'
+                                : 'bg-background/80 hover:bg-surface-hover text-secondary hover:text-primary border-subtle hover:border-subtle-hover'
                             }`}
                             title={`${item.code}: ${item.title}`}
                           >
@@ -3260,7 +3434,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                   <button
                     type="button"
                     onClick={() => setShowCore8HubModal(true)}
-                    className="text-tertiary hover:text-primary text-xs font-semibold flex items-center gap-1 cursor-pointer ml-auto"
+                    className="text-tertiary hover:text-primary text-xs font-semibold flex items-center gap-1 cursor-pointer ml-auto transition"
                     title="View Core 8 Syllabus Matrix & Program Outcomes"
                   >
                     <Info className="w-3.5 h-3.5 text-brand" />
@@ -3271,7 +3445,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
 
               {/* Toggle/Switch for Structured vs Global browse mode */}
               {selectedOffering === null && (currentUser.role === UserRole.ADMIN || currentUser.role === UserRole.DEPT_HEAD) && (
-                <div className="flex bg-surface-hover p-1 rounded-xl w-fit border border-subtle">
+                <div className="flex bg-surface-hover/80 p-1 rounded-xl w-fit border border-subtle backdrop-blur-xs">
                   <button
                     type="button"
                     onClick={() => {
@@ -3279,10 +3453,10 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                       setSelectedYear(null);
                       setSelectedTerm(null);
                     }}
-                    className={`px-4 py-1.5 rounded-lg text-xs font-semibold cursor-pointer transition ${
+                    className={`px-4 py-2 rounded-lg text-xs font-semibold cursor-pointer transition-all ${
                       browseMode === 'global'
-                        ? 'bg-surface text-primary-muted shadow-sm border border-subtle/50 font-bold'
-                        : 'text-tertiary hover:text-primary-muted'
+                        ? 'bg-surface text-primary shadow-sm border border-subtle font-bold'
+                        : 'text-tertiary hover:text-primary'
                     }`}
                   >
                     Global Search & Filters
@@ -3294,10 +3468,10 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                       setSelectedYear(null);
                       setSelectedTerm(null);
                     }}
-                    className={`px-4 py-1.5 rounded-lg text-xs font-semibold cursor-pointer transition ${
+                    className={`px-4 py-2 rounded-lg text-xs font-semibold cursor-pointer transition-all ${
                       browseMode === 'structured'
-                        ? 'bg-surface text-primary-muted shadow-sm border border-subtle/50 font-bold'
-                        : 'text-tertiary hover:text-primary-muted'
+                        ? 'bg-surface text-primary shadow-sm border border-subtle font-bold'
+                        : 'text-tertiary hover:text-primary'
                     }`}
                   >
                     Structured Browse (Year/Term)
@@ -3469,7 +3643,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                       </div>
                     ) : (
                       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                        {filteredOfferings.map(off => {
+                        {paginatedOfferings.map(off => {
                           const offDocs = allDocs.filter(d => d.offeringId === off.id && d.isCurrent);
                           const activeCore = categoriesList.filter(c => c.isCore && c.isActive !== false).map(c => c.id);
                           const coreList = activeCore.length > 0 ? activeCore : CORE_16_CATEGORIES;
@@ -3575,6 +3749,24 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                             </div>
                           );
                         })}
+                      </div>
+                    )}
+
+                    {filteredOfferings.length > 0 && (
+                      <div className="mt-6 pt-4 border-t border-subtle">
+                        <Pagination
+                          currentPage={offeringsPage}
+                          totalPages={offeringsTotalPages}
+                          totalItems={filteredOfferings.length}
+                          pageSize={offeringsPageSize}
+                          pageSizeOptions={[6, 12, 24, 48]}
+                          itemLabel="course offerings"
+                          onPageChange={setOfferingsPage}
+                          onPageSizeChange={(size) => {
+                            setOfferingsPageSize(size);
+                            setOfferingsPage(1);
+                          }}
+                        />
                       </div>
                     )}
                   </div>
@@ -5723,7 +5915,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60 text-xs text-secondary">
-                            {filteredDocs.map(doc => {
+                            {paginatedArchiveDocs.map(doc => {
                               const categoryLabel = getCategoryLabel(doc.category);
                               return (
                                 <tr key={doc.id} className="hover:bg-background/80 transition group">
@@ -5799,7 +5991,7 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                   {/* LAYOUT 2: CARDS VIEW */}
                   {archiveViewLayout === 'cards' && (
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                      {filteredDocs.map(doc => {
+                      {paginatedArchiveDocs.map(doc => {
                         const categoryLabel = getCategoryLabel(doc.category);
                         const statusColors = doc.status === 'approved' ? 'bg-success-subtle text-success-bold border-success-subtle' :
                           doc.status === 'rejected' ? 'bg-error-subtle text-error-bold border-error-subtle' :
@@ -5979,6 +6171,19 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                       </div>
                     );
                   })()}
+
+                  {/* Document Archive Pagination Toolbar */}
+                  <Pagination
+                    currentPage={archivePage}
+                    totalPages={archiveTotalPages}
+                    totalItems={filteredDocs.length}
+                    pageSize={archivePageSize}
+                    onPageChange={setArchivePage}
+                    onPageSizeChange={setArchivePageSize}
+                    pageSizeOptions={[12, 24, 48, 96]}
+                    itemLabel="documents"
+                    className="mt-6"
+                  />
                 </div>
               )}
             </div>
@@ -5988,63 +6193,404 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
 
           {/* --- TAB 4: AUDIT LOG (ADMIN ONLY) --- */}
           {activeTab === 'ledger' && currentUser.role === UserRole.ADMIN && (
-            <div className="space-y-6">
+            <div className="space-y-6 animate-in fade-in duration-200">
+              {/* Header & Quick Export */}
               <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div>
                   <h2 className="text-xl font-bold text-primary flex items-center gap-2">
-                    <History className="w-5 h-5 text-brand" /> System Audit Log
+                    <History className="w-5 h-5 text-brand" /> System Audit Log & Compliance Ledger
                   </h2>
                   <p className="text-xs text-tertiary mt-1">
-                    Every administrative and file transaction is recorded in a secure audit trail.
+                    Immutable chronological audit trail of administrative events, file uploads, reviews, clearances, and security records.
                   </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={exportLedgerCSV}
+                    className="flex items-center gap-1.5 bg-surface border border-subtle hover:border-brand/40 text-secondary hover:text-brand px-3.5 py-2 rounded-xl text-xs font-semibold shadow-sm transition cursor-pointer"
+                    title="Export filtered audit trail to CSV for ABET / institutional compliance"
+                  >
+                    <FileSpreadsheet className="w-4 h-4 text-emerald-500" />
+                    <span>Export CSV</span>
+                  </button>
+                  <div className="bg-brand-subtle text-brand px-3 py-2 rounded-xl text-xs font-mono font-bold border border-brand/20">
+                    {ledgerTotal} {ledgerTotal === 1 ? 'Event' : 'Events'} Logged
+                  </div>
                 </div>
               </div>
 
-              {auditLogs.length === 0 ? (
+              {/* Metrics Summary Strip */}
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5">
+                <div className="bg-surface border border-subtle rounded-2xl p-3.5 shadow-xs flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-brand-subtle text-brand flex items-center justify-center shrink-0">
+                    <Activity className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <p className="text-xs font-bold text-quaternary uppercase font-mono tracking-wider">Total Events</p>
+                    <p className="text-base font-bold text-primary font-mono">{ledgerTotal}</p>
+                  </div>
+                </div>
+
+                <div className="bg-surface border border-subtle rounded-2xl p-3.5 shadow-xs flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0">
+                    <FileUp className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <p className="text-xs font-bold text-quaternary uppercase font-mono tracking-wider">Uploads & Files</p>
+                    <p className="text-base font-bold text-primary font-mono">
+                      {auditLogs.filter(l => l.action.includes('UPLOAD') || l.action.includes('DOCUMENT')).length}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="bg-surface border border-subtle rounded-2xl p-3.5 shadow-xs flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
+                    <CheckCircle className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <p className="text-xs font-bold text-quaternary uppercase font-mono tracking-wider">Approvals & Reviews</p>
+                    <p className="text-base font-bold text-primary font-mono">
+                      {auditLogs.filter(l => l.action.includes('APPROVE') || l.action.includes('REJECT')).length}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="bg-surface border border-subtle rounded-2xl p-3.5 shadow-xs flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-purple-50 dark:bg-purple-950/40 text-purple-600 dark:text-purple-400 flex items-center justify-center shrink-0">
+                    <Shield className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <p className="text-xs font-bold text-quaternary uppercase font-mono tracking-wider">Clearance & Security</p>
+                    <p className="text-base font-bold text-primary font-mono">
+                      {auditLogs.filter(l => l.action.includes('ROLE') || l.action.includes('USER') || l.action.includes('REMINDER')).length}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Filter & Search Toolbar */}
+              <div className="bg-surface border border-subtle rounded-2xl p-4 space-y-3 shadow-sm">
+                <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
+                  {/* Search Bar */}
+                  <div className="relative flex-1">
+                    <span className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-quaternary">
+                      <Search className="w-3.5 h-3.5" />
+                    </span>
+                    <input
+                      type="text"
+                      value={ledgerSearch}
+                      onChange={(e) => {
+                        setLedgerSearch(e.target.value);
+                        setLedgerPage(1);
+                      }}
+                      placeholder="Search activity by actor, action, file name, course code, or details..."
+                      className="w-full bg-background border border-subtle rounded-xl py-2 pl-9 pr-8 text-primary placeholder-slate-400 text-xs focus:outline-none focus:ring-1 focus:ring-brand font-medium"
+                    />
+                    {ledgerSearch && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setLedgerSearch('');
+                          setLedgerPage(1);
+                        }}
+                        className="absolute inset-y-0 right-0 pr-2.5 flex items-center text-quaternary hover:text-primary cursor-pointer"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Action Category Dropdown */}
+                  <div className="flex items-center gap-1.5 bg-background border border-subtle rounded-xl px-2.5 py-1.5 text-xs shrink-0">
+                    <Filter className="w-3.5 h-3.5 text-brand shrink-0" />
+                    <select
+                      value={ledgerAction}
+                      onChange={(e) => {
+                        setLedgerAction(e.target.value);
+                        setLedgerPage(1);
+                      }}
+                      className="bg-transparent text-secondary outline-none text-xs w-full cursor-pointer font-medium"
+                    >
+                      <option value="">All Action Types</option>
+                      <option value="CREATE_DOCUMENT">Document Upload</option>
+                      <option value="UPLOAD_NEW_VERSION">New Version Upload</option>
+                      <option value="BULK_UPLOAD">Bulk Upload Batch</option>
+                      <option value="APPROVE_DOCUMENT">Document Approved</option>
+                      <option value="REJECT_DOCUMENT">Document Rejected</option>
+                      <option value="DELETE_DOCUMENT">Soft Deleted (Trash)</option>
+                      <option value="RESTORE_DOCUMENT">Restored from Trash</option>
+                      <option value="PURGE_DOCUMENT">Purged from R2 Storage</option>
+                      <option value="APPROVE_OFFERING">Portfolio Approved</option>
+                      <option value="SUBMIT_OFFERING">Portfolio Submitted</option>
+                      <option value="FACULTY_REMINDER_SENT">Compliance Reminder</option>
+                      <option value="USER_ROLE_UPDATED">Security Role Changed</option>
+                      <option value="USER_APPROVED">Staff Clearance Approved</option>
+                      <option value="SYSTEM_INIT">System Initialization</option>
+                    </select>
+                  </div>
+
+                  {/* Layout View Switcher */}
+                  <div className="flex items-center gap-1 bg-background border border-subtle p-1 rounded-xl shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => setLedgerLayout('table')}
+                      className={`p-1.5 rounded-lg text-xs font-semibold flex items-center gap-1 cursor-pointer transition ${
+                        ledgerLayout === 'table' ? 'bg-surface text-brand shadow-xs border border-subtle' : 'text-tertiary hover:text-primary'
+                      }`}
+                      title="High-Density Table View"
+                    >
+                      <List className="w-3.5 h-3.5" />
+                      <span className="hidden sm:inline text-xs">Table</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setLedgerLayout('cards')}
+                      className={`p-1.5 rounded-lg text-xs font-semibold flex items-center gap-1 cursor-pointer transition ${
+                        ledgerLayout === 'cards' ? 'bg-surface text-brand shadow-xs border border-subtle' : 'text-tertiary hover:text-primary'
+                      }`}
+                      title="Cards View"
+                    >
+                      <Grid className="w-3.5 h-3.5" />
+                      <span className="hidden sm:inline text-xs">Cards</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Date Presets & Reset Toolbar */}
+                <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-divider text-xs">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="text-xs uppercase font-mono font-bold text-quaternary">Time Range:</span>
+                    {(['all', 'today', '7d', '30d'] as const).map((range) => {
+                      const label = range === 'all' ? 'All Time' : range === 'today' ? 'Today' : range === '7d' ? 'Past 7 Days' : 'Past 30 Days';
+                      const isSelected = ledgerDateRange === range;
+                      return (
+                        <button
+                          key={range}
+                          type="button"
+                          onClick={() => {
+                            setLedgerDateRange(range);
+                            setLedgerPage(1);
+                          }}
+                          className={`px-2.5 py-1 rounded-lg text-xs font-mono font-semibold transition border cursor-pointer ${
+                            isSelected
+                              ? 'bg-brand text-white border-brand shadow-xs'
+                              : 'bg-background hover:bg-surface-hover text-secondary hover:text-primary border-subtle'
+                          }`}
+                        >
+                          {label}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {(ledgerSearch || ledgerAction || ledgerDateRange !== 'all') && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setLedgerSearch('');
+                        setLedgerAction('');
+                        setLedgerDateRange('all');
+                        setLedgerPage(1);
+                      }}
+                      className="px-2.5 py-1 rounded-lg text-xs font-bold text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition cursor-pointer flex items-center gap-1 border border-rose-200 dark:border-rose-900/40"
+                    >
+                      <RotateCcw className="w-3 h-3" /> Reset Filters
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Logs Content Render */}
+              {ledgerLoading ? (
+                <div className="bg-surface border border-subtle rounded-2xl p-12 text-center flex flex-col items-center justify-center">
+                  <RefreshCw className="w-8 h-8 text-brand animate-spin mb-3" />
+                  <p className="text-xs text-secondary font-mono">Querying indexed audit trail...</p>
+                </div>
+              ) : ledgerLogs.length === 0 ? (
                 <div className="bg-surface border border-subtle rounded-2xl p-12 text-center flex flex-col items-center justify-center animate-in fade-in duration-300">
                   <div className="w-16 h-16 bg-brand-subtle rounded-full flex items-center justify-center mb-4">
                     <History className="w-8 h-8 text-brand" />
                   </div>
-                  <h3 className="text-lg font-bold text-primary mb-2">No Activity Recorded</h3>
-                  <p className="text-secondary-muted text-sm max-w-md mx-auto">
-                    The system audit log is currently empty. Actions like document uploads, reviews, and role changes will be recorded here.
+                  <h3 className="text-lg font-bold text-primary mb-2">No Matching Activity Recorded</h3>
+                  <p className="text-secondary-muted text-sm max-w-md mx-auto mb-4">
+                    {ledgerSearch || ledgerAction || ledgerDateRange !== 'all'
+                      ? 'No audit entries match the current filter criteria. Try resetting or adjusting your search terms.'
+                      : 'The system audit log is currently empty. Actions like document uploads, reviews, and role changes will be recorded here.'}
                   </p>
+                  {(ledgerSearch || ledgerAction || ledgerDateRange !== 'all') && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setLedgerSearch('');
+                        setLedgerAction('');
+                        setLedgerDateRange('all');
+                        setLedgerPage(1);
+                      }}
+                      className="bg-brand hover:bg-brand-bolder text-white text-xs font-bold py-2 px-4 rounded-xl transition cursor-pointer flex items-center gap-1.5"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5" /> Clear Filters
+                    </button>
+                  )}
                 </div>
               ) : (
-                <div className="space-y-4 animate-in slide-in-from-bottom-4 duration-500">
-                  {auditLogs.map((log) => {
-                    const isSystemInit = log.action === 'SYSTEM_INIT';
-                    return (
-                      <div 
-                        key={log.id} 
-                        className="bg-surface border border-subtle rounded-2xl p-5 hover:border-subtle-hover transition duration-150 space-y-3 shadow-sm"
-                      >
-                        {/* Top bar of log entry */}
-                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-divider pb-3">
-                          <div className="flex items-center gap-2">
-                            <span className={`px-2 py-0.5 rounded text-xs font-bold font-mono tracking-wider border ${
-                              isSystemInit ? 'bg-surface-hover text-secondary-muted border-subtle' :
-                              log.action.includes('UPLOAD') ? 'bg-brand-subtle text-brand-bold border-brand-divider' :
-                              log.action.includes('APPROVE') ? 'bg-success-subtle text-success-bold border-emerald-100' :
-                              log.action.includes('REJECT') ? 'bg-error-subtle text-error-bold border-error-divider' :
-                              'bg-brand-subtle text-brand-bold border-brand-divider'
-                            }`}>
-                              {log.action}
-                            </span>
-                            <span className="text-xs text-quaternary font-mono">{new Date(log.timestamp).toLocaleString()}</span>
-                          </div>
-                          
-                          <div className="flex items-center gap-2 text-xs">
-                            <span className="text-tertiary">Actor:</span>
-                            <span className="font-semibold text-secondary">{log.actorEmail.split('@')[0]}</span>
-                          </div>
-                        </div>
+                <div className="space-y-4">
+                  {/* LAYOUT 1: HIGH-DENSITY TABLE VIEW */}
+                  {ledgerLayout === 'table' && (
+                    <div className="bg-surface border border-subtle rounded-2xl overflow-hidden shadow-sm">
+                      <div className="overflow-x-auto w-full">
+                        <table className="w-full text-left border-collapse min-w-[760px]">
+                          <thead>
+                            <tr className="border-b border-subtle bg-background text-xs font-mono uppercase text-quaternary tracking-wider">
+                              <th className="py-3 px-4">Timestamp</th>
+                              <th className="py-3 px-4">Action Type</th>
+                              <th className="py-3 px-4">Actor</th>
+                              <th className="py-3 px-4">Target Resource</th>
+                              <th className="py-3 px-4">Details</th>
+                              <th className="py-3 px-4 text-center">Security Integrity</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60 text-xs text-secondary">
+                            {ledgerLogs.map((log) => {
+                              const isSystemInit = log.action === 'SYSTEM_INIT';
+                              const actionBadgeStyle = isSystemInit
+                                ? 'bg-surface-hover text-secondary-muted border-subtle'
+                                : log.action.includes('UPLOAD') || log.action.includes('CREATE')
+                                ? 'bg-brand-subtle text-brand-bold border-brand-divider'
+                                : log.action.includes('APPROVE')
+                                ? 'bg-success-subtle text-success-bold border-emerald-100 dark:border-emerald-900/40'
+                                : log.action.includes('REJECT')
+                                ? 'bg-error-subtle text-error-bold border-error-divider'
+                                : log.action.includes('DELETE') || log.action.includes('PURGE')
+                                ? 'bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 border-rose-200 dark:border-rose-900/40'
+                                : log.action.includes('REMINDER')
+                                ? 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-900/40'
+                                : log.action.includes('ROLE') || log.action.includes('USER')
+                                ? 'bg-purple-50 dark:bg-purple-950/40 text-purple-700 dark:text-purple-400 border-purple-200 dark:border-purple-900/40'
+                                : 'bg-brand-subtle text-brand-bold border-brand-divider';
 
-                        {/* Details */}
-                        <p className="text-sm text-primary font-medium">{log.details}</p>
+                              return (
+                                <tr key={log.id} className="hover:bg-background/80 transition group">
+                                  <td className="py-3 px-4 whitespace-nowrap font-mono text-quaternary text-xs">
+                                    <div className="font-semibold text-secondary">
+                                      {new Date(log.timestamp).toLocaleDateString()}
+                                    </div>
+                                    <div className="text-xs text-tertiary">
+                                      {new Date(log.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                                    </div>
+                                  </td>
+                                  <td className="py-3 px-4 whitespace-nowrap">
+                                    <span className={`inline-block px-2 py-0.5 rounded text-xs font-bold font-mono tracking-wider border ${actionBadgeStyle}`}>
+                                      {log.action}
+                                    </span>
+                                  </td>
+                                  <td className="py-3 px-4">
+                                    <div className="font-semibold text-primary">{log.actorName || log.actorEmail.split('@')[0]}</div>
+                                    <div className="text-xs text-tertiary font-mono">{log.actorEmail}</div>
+                                  </td>
+                                  <td className="py-3 px-4">
+                                    {log.targetDocumentName ? (
+                                      <div className="font-mono text-brand font-semibold max-w-[200px] truncate" title={log.targetDocumentName}>
+                                        {log.targetDocumentName}
+                                      </div>
+                                    ) : (
+                                      <span className="text-quaternary font-mono text-xs">—</span>
+                                    )}
+                                  </td>
+                                  <td className="py-3 px-4">
+                                    <p className="text-xs text-primary max-w-[340px] line-clamp-2" title={log.details}>
+                                      {log.details}
+                                    </p>
+                                  </td>
+                                  <td className="py-3 px-4 text-center whitespace-nowrap">
+                                    <span className="inline-flex items-center gap-1 bg-emerald-50 dark:bg-emerald-950/30 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-900/40 px-2 py-0.5 rounded-full text-xs font-mono font-bold" title={log.entryHash ? `SHA-256 Hash: ${log.entryHash}` : 'Audit Record Verified'}>
+                                      <Shield className="w-3 h-3 text-emerald-500" />
+                                      <span>Verified</span>
+                                    </span>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
                       </div>
-                    );
-                  })}
+                    </div>
+                  )}
+
+                  {/* LAYOUT 2: CARDS VIEW */}
+                  {ledgerLayout === 'cards' && (
+                    <div className="space-y-3 animate-in slide-in-from-bottom-2 duration-300">
+                      {ledgerLogs.map((log) => {
+                        const isSystemInit = log.action === 'SYSTEM_INIT';
+                        const actionBadgeStyle = isSystemInit
+                          ? 'bg-surface-hover text-secondary-muted border-subtle'
+                          : log.action.includes('UPLOAD') || log.action.includes('CREATE')
+                          ? 'bg-brand-subtle text-brand-bold border-brand-divider'
+                          : log.action.includes('APPROVE')
+                          ? 'bg-success-subtle text-success-bold border-emerald-100 dark:border-emerald-900/40'
+                          : log.action.includes('REJECT')
+                          ? 'bg-error-subtle text-error-bold border-error-divider'
+                          : log.action.includes('DELETE') || log.action.includes('PURGE')
+                          ? 'bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 border-rose-200 dark:border-rose-900/40'
+                          : log.action.includes('REMINDER')
+                          ? 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-900/40'
+                          : log.action.includes('ROLE') || log.action.includes('USER')
+                          ? 'bg-purple-50 dark:bg-purple-950/40 text-purple-700 dark:text-purple-400 border-purple-200 dark:border-purple-900/40'
+                          : 'bg-brand-subtle text-brand-bold border-brand-divider';
+
+                        return (
+                          <div 
+                            key={log.id} 
+                            className="bg-surface border border-subtle rounded-2xl p-4 hover:border-subtle-hover transition duration-150 space-y-2.5 shadow-xs"
+                          >
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 border-b border-divider pb-2.5">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <span className={`px-2 py-0.5 rounded text-xs font-bold font-mono tracking-wider border ${actionBadgeStyle}`}>
+                                  {log.action}
+                                </span>
+                                <span className="text-xs text-quaternary font-mono">{new Date(log.timestamp).toLocaleString()}</span>
+                                {log.targetDocumentName && (
+                                  <span className="bg-background text-brand font-mono text-xs px-2 py-0.5 rounded border border-subtle truncate max-w-[240px]">
+                                    {log.targetDocumentName}
+                                  </span>
+                                )}
+                              </div>
+                              
+                              <div className="flex items-center gap-2 text-xs">
+                                <span className="text-tertiary">Actor:</span>
+                                <span className="font-semibold text-secondary font-mono">{log.actorEmail}</span>
+                                <span className="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/30 px-1.5 py-0.5 rounded text-xs font-mono font-bold border border-emerald-200 dark:border-emerald-900/40 ml-1">
+                                  <Shield className="w-2.5 h-2.5" /> Verified
+                                </span>
+                              </div>
+                            </div>
+
+                            <p className="text-xs sm:text-sm text-primary font-medium">{log.details}</p>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {/* Activity Log Server-Side Pagination Toolbar */}
+                  <Pagination
+                    currentPage={ledgerPage}
+                    totalPages={ledgerTotalPages}
+                    totalItems={ledgerTotal}
+                    pageSize={ledgerLimit}
+                    onPageChange={(newPage) => {
+                      setLedgerPage(newPage);
+                      fetchLedgerLogs(newPage, ledgerLimit, ledgerSearch, ledgerAction, ledgerDateRange);
+                    }}
+                    onPageSizeChange={(newLimit) => {
+                      setLedgerLimit(newLimit);
+                      setLedgerPage(1);
+                      fetchLedgerLogs(1, newLimit, ledgerSearch, ledgerAction, ledgerDateRange);
+                    }}
+                    pageSizeOptions={[10, 25, 50, 100]}
+                    itemLabel="events"
+                    className="mt-6"
+                  />
                 </div>
               )}
             </div>
@@ -6068,10 +6614,119 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                 </button>
               </div>
 
-              {/* Grid of Users */}
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {usersList.map(u => {
-                  const isEditing = editingUserId === u.id;
+              {/* User Search & Filter Toolbar */}
+              <div className="bg-surface border border-subtle rounded-2xl p-4 shadow-sm space-y-3">
+                <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
+                  {/* Search Bar */}
+                  <div className="relative flex-1">
+                    <span className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-quaternary">
+                      <Search className="w-3.5 h-3.5" />
+                    </span>
+                    <input
+                      type="text"
+                      value={userSearch}
+                      onChange={(e) => {
+                        setUserSearch(e.target.value);
+                        setUserPage(1);
+                      }}
+                      placeholder="Search personnel by name, email, or department..."
+                      className="w-full bg-background border border-subtle rounded-xl py-2 pl-9 pr-8 text-primary placeholder-slate-400 text-xs focus:outline-none focus:ring-1 focus:ring-brand font-medium"
+                    />
+                    {userSearch && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setUserSearch('');
+                          setUserPage(1);
+                        }}
+                        className="absolute inset-y-0 right-0 pr-2.5 flex items-center text-quaternary hover:text-primary cursor-pointer"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Role filter */}
+                  <div className="flex items-center gap-1.5 bg-background border border-subtle rounded-xl px-2.5 py-1.5 text-xs shrink-0">
+                    <Shield className="w-3.5 h-3.5 text-brand shrink-0" />
+                    <select
+                      value={userRoleFilter}
+                      onChange={(e) => {
+                        setUserRoleFilter(e.target.value);
+                        setUserPage(1);
+                      }}
+                      className="bg-transparent text-secondary outline-none text-xs w-full cursor-pointer font-medium"
+                    >
+                      <option value="all">All Clearance Roles</option>
+                      <option value={UserRole.INSTRUCTOR}>INSTRUCTOR</option>
+                      <option value={UserRole.DEPT_HEAD}>DEPARTMENT HEAD</option>
+                      <option value={UserRole.AUDITOR}>BOARD AUDITOR</option>
+                      <option value={UserRole.ADMIN}>SYSTEM ADMIN</option>
+                    </select>
+                  </div>
+
+                  {/* Status filter */}
+                  <div className="flex items-center gap-1.5 bg-background border border-subtle rounded-xl px-2.5 py-1.5 text-xs shrink-0">
+                    <CheckCircle className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                    <select
+                      value={userStatusFilter}
+                      onChange={(e) => {
+                        setUserStatusFilter(e.target.value as any);
+                        setUserPage(1);
+                      }}
+                      className="bg-transparent text-secondary outline-none text-xs w-full cursor-pointer font-medium"
+                    >
+                      <option value="all">All Statuses</option>
+                      <option value="active">Approved Staff</option>
+                      <option value="pending">Pending Approval</option>
+                    </select>
+                  </div>
+
+                  {(userSearch || userRoleFilter !== 'all' || userStatusFilter !== 'all') && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setUserSearch('');
+                        setUserRoleFilter('all');
+                        setUserStatusFilter('all');
+                        setUserPage(1);
+                      }}
+                      className="px-2.5 py-1.5 rounded-xl text-xs font-bold text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition cursor-pointer flex items-center gap-1 border border-rose-200 dark:border-rose-900/40"
+                    >
+                      <RotateCcw className="w-3 h-3" /> Reset
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {filteredUsers.length === 0 ? (
+                <div className="bg-surface border border-subtle rounded-2xl p-12 text-center flex flex-col items-center justify-center animate-in fade-in duration-300">
+                  <div className="w-16 h-16 bg-brand-subtle rounded-full flex items-center justify-center mb-4">
+                    <User className="w-8 h-8 text-brand" />
+                  </div>
+                  <h3 className="text-lg font-bold text-primary mb-2">No Matching Personnel Found</h3>
+                  <p className="text-secondary-muted text-sm max-w-md mx-auto mb-4">
+                    No university personnel match your filter criteria. Try adjusting your search query or role filter.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setUserSearch('');
+                      setUserRoleFilter('all');
+                      setUserStatusFilter('all');
+                      setUserPage(1);
+                    }}
+                    className="bg-brand hover:bg-brand-bolder text-white text-xs font-bold py-2 px-4 rounded-xl transition cursor-pointer flex items-center gap-1.5"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" /> Clear Filters
+                  </button>
+                </div>
+              ) : (
+                <>
+                  {/* Grid of Users */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {paginatedUsers.map(u => {
+                      const isEditing = editingUserId === u.id;
                   return (
                     <div key={u.id} className="bg-surface border border-subtle rounded-2xl p-5 flex flex-col justify-between hover:border-indigo-350 hover:shadow-md transition duration-150 shadow-sm space-y-4">
                       <div className="flex items-start gap-4">
@@ -6201,8 +6856,23 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                   );
                 })}
               </div>
-            </div>
+
+              {/* User Management Pagination */}
+              <Pagination
+                currentPage={userPage}
+                totalPages={userTotalPages}
+                totalItems={filteredUsers.length}
+                pageSize={userPageSize}
+                onPageChange={setUserPage}
+                onPageSizeChange={setUserPageSize}
+                pageSizeOptions={[6, 12, 24, 48]}
+                itemLabel="staff members"
+                className="mt-6"
+              />
+            </>
           )}
+        </div>
+      )}
 
           {/* --- TAB 6: DYNAMIC CATEGORY REQUIREMENT SLOTS --- */}
           {activeTab === 'categories' && currentUser.role === UserRole.ADMIN && (
@@ -6306,374 +6976,142 @@ const executeUserRoleUpdate = async (userId: string, role: UserRole, department:
                   <p className="text-xs text-tertiary max-w-sm mx-auto">No soft-deleted documents found. Any documents deleted from portfolios will be safely held here prior to permanent storage purging.</p>
                 </div>
               ) : (
-                <div className="bg-surface border border-subtle rounded-2xl overflow-hidden shadow-sm">
-                  <div className="p-4 bg-rose-500/5 border-b border-rose-500/15 flex items-center justify-between">
-                    <span className="text-xs font-bold text-rose-700 uppercase font-mono tracking-wider">Soft-Deleted Archives ({trashDocuments.length})</span>
-                    <span className="text-xs text-tertiary font-mono">Protected by 30-day Retention Guard</span>
+                <div className="space-y-4">
+                  {/* Trash Search Toolbar */}
+                  <div className="bg-surface border border-subtle rounded-2xl p-4 shadow-sm">
+                    <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+                      <div className="relative flex-1">
+                        <span className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-quaternary">
+                          <Search className="w-3.5 h-3.5" />
+                        </span>
+                        <input
+                          type="text"
+                          value={trashSearch}
+                          onChange={(e) => {
+                            setTrashSearch(e.target.value);
+                            setTrashPage(1);
+                          }}
+                          placeholder="Search trash by file name, course code, category, or uploader..."
+                          className="w-full bg-background border border-subtle rounded-xl py-2 pl-9 pr-8 text-primary placeholder-slate-400 text-xs focus:outline-none focus:ring-1 focus:ring-brand font-medium"
+                        />
+                        {trashSearch && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setTrashSearch('');
+                              setTrashPage(1);
+                            }}
+                            className="absolute inset-y-0 right-0 pr-2.5 flex items-center text-quaternary hover:text-primary cursor-pointer"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
+                      {trashSearch && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setTrashSearch('');
+                            setTrashPage(1);
+                          }}
+                          className="px-2.5 py-1.5 rounded-xl text-xs font-bold text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition cursor-pointer flex items-center gap-1 border border-rose-200 dark:border-rose-900/40 shrink-0"
+                        >
+                          <RotateCcw className="w-3 h-3" /> Reset
+                        </button>
+                      )}
+                    </div>
                   </div>
 
-                  <div className="divide-y divide-subtle">
-                    {trashDocuments.map(doc => {
-                      const offering = offerings.find(o => o.id === doc.offeringId);
-                      const course = offering ? courses.find(c => c.id === offering.courseId) : null;
-                      const catMeta = categoriesList.find(c => c.id === doc.category);
-                      
-                      return (
-                        <div key={doc.id} className="p-4 flex flex-col md:flex-row md:items-center justify-between gap-4 hover:bg-surface-hover/30 transition duration-150">
-                          <div className="space-y-1">
-                            <div className="flex items-center gap-2">
-                              <span className="text-xs font-bold text-primary">{doc.fileName}</span>
-                              <span className="bg-subtle/50 text-secondary text-xs font-mono px-2 py-0.5 rounded">
-                                {catMeta?.label || doc.category}
-                              </span>
+                  {filteredTrash.length === 0 ? (
+                    <div className="text-center py-16 bg-surface rounded-2xl border border-subtle shadow-sm space-y-3">
+                      <Trash2 className="w-10 h-10 text-quaternary mx-auto opacity-40" />
+                      <h3 className="text-sm font-bold text-primary">No Matching Deleted Files</h3>
+                      <p className="text-xs text-tertiary max-w-sm mx-auto">No soft-deleted files match your search "{trashSearch}".</p>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setTrashSearch('');
+                          setTrashPage(1);
+                        }}
+                        className="bg-brand hover:bg-brand-bolder text-white text-xs font-bold py-2 px-4 rounded-xl transition cursor-pointer flex items-center gap-1.5 mx-auto"
+                      >
+                        <RotateCcw className="w-3.5 h-3.5" /> Clear Search
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="bg-surface border border-subtle rounded-2xl overflow-hidden shadow-sm">
+                      <div className="p-4 bg-rose-500/5 border-b border-rose-500/15 flex items-center justify-between">
+                        <span className="text-xs font-bold text-rose-700 uppercase font-mono tracking-wider">
+                          Soft-Deleted Archives ({filteredTrash.length})
+                        </span>
+                        <span className="text-xs text-tertiary font-mono">Protected by 30-day Retention Guard</span>
+                      </div>
+
+                      <div className="divide-y divide-subtle">
+                        {paginatedTrash.map(doc => {
+                          const offering = offerings.find(o => o.id === doc.offeringId);
+                          const course = offering ? courses.find(c => c.id === offering.courseId) : null;
+                          const catMeta = categoriesList.find(c => c.id === doc.category);
+                          
+                          return (
+                            <div key={doc.id} className="p-4 flex flex-col md:flex-row md:items-center justify-between gap-4 hover:bg-surface-hover/30 transition duration-150">
+                              <div className="space-y-1">
+                                <div className="flex items-center gap-2">
+                                  <span className="text-xs font-bold text-primary">{doc.fileName}</span>
+                                  <span className="bg-subtle/50 text-secondary text-xs font-mono px-2 py-0.5 rounded">
+                                    {catMeta?.label || doc.category}
+                                  </span>
+                                </div>
+                                <p className="text-xs text-tertiary">
+                                  Course: <span className="font-semibold text-secondary">{course?.code || 'N/A'}</span> ({offering?.term} {offering?.academicYear}) • Uploaded by: {doc.uploadedBy}
+                                </p>
+                                {doc.deletedAt && (
+                                  <p className="text-xs font-mono text-quaternary">
+                                    Deleted At: {new Date(doc.deletedAt).toLocaleString()}
+                                  </p>
+                                )}
+                              </div>
+
+                              <div className="flex items-center gap-2 self-end md:self-center">
+                                <button
+                                  onClick={() => handleRestoreTrashDoc(doc.id, doc.fileName)}
+                                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600/10 hover:bg-emerald-600/20 text-emerald-600 border border-emerald-600/20 rounded-lg text-xs font-semibold transition cursor-pointer"
+                                >
+                                  <RotateCcw className="w-3.5 h-3.5" /> Restore
+                                </button>
+                                {currentUser.role === UserRole.ADMIN && (
+                                  <button
+                                    onClick={() => handlePurgeTrashDoc(doc.id, doc.fileName)}
+                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white font-semibold rounded-lg text-xs transition cursor-pointer shadow-sm shadow-rose-600/10"
+                                    title="Permanently delete this object from Cloudflare R2 bucket"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" /> Purge R2 Storage
+                                  </button>
+                                )}
+                              </div>
                             </div>
-                            <p className="text-xs text-tertiary">
-                              Course: <span className="font-semibold text-secondary">{course?.code || 'N/A'}</span> ({offering?.term} {offering?.academicYear}) • Uploaded by: {doc.uploadedBy}
-                            </p>
-                            {doc.deletedAt && (
-                              <p className="text-xs font-mono text-quaternary">
-                                Deleted At: {new Date(doc.deletedAt).toLocaleString()}
-                              </p>
-                            )}
-                          </div>
+                          );
+                        })}
+                      </div>
 
-                          <div className="flex items-center gap-2 self-end md:self-center">
-                            <button
-                              onClick={() => handleRestoreTrashDoc(doc.id, doc.fileName)}
-                              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600/10 hover:bg-emerald-600/20 text-emerald-600 border border-emerald-600/20 rounded-lg text-xs font-semibold transition cursor-pointer"
-                            >
-                              <RotateCcw className="w-3.5 h-3.5" /> Restore
-                            </button>
-                            {currentUser.role === UserRole.ADMIN && (
-                              <button
-                                onClick={() => handlePurgeTrashDoc(doc.id, doc.fileName)}
-                                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white font-semibold rounded-lg text-xs transition cursor-pointer shadow-sm shadow-rose-600/10"
-                                title="Permanently delete this object from Cloudflare R2 bucket"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" /> Purge R2 Storage
-                              </button>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
+                      {/* Trash Pagination */}
+                      <Pagination
+                        currentPage={trashPage}
+                        totalPages={trashTotalPages}
+                        totalItems={filteredTrash.length}
+                        pageSize={trashPageSize}
+                        onPageChange={setTrashPage}
+                        onPageSizeChange={setTrashPageSize}
+                        pageSizeOptions={[10, 15, 30, 50]}
+                        itemLabel="soft-deleted files"
+                        className="border-t border-subtle rounded-none border-x-0 border-b-0"
+                      />
+                    </div>
+                  )}
                 </div>
               )}
             </div>
           )}
-          {/* Signature Modal */}
-      {showSignatureModal && selectedOffering && (
-        <div role="dialog" aria-modal="true" aria-label="Digital Signature Modal" className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={() => setShowSignatureModal(false)}></div>
-          <div className="bg-surface text-primary border border-subtle shadow-2xl rounded-2xl p-6 w-[95%] max-w-xl z-10 relative max-h-[90vh] overflow-y-auto">
-            
-            <div className="flex items-center justify-between border-b border-subtle pb-3 mb-4">
-              <div className="flex items-center gap-2.5">
-                <span className="w-9 h-9 rounded-xl bg-brand/10 text-brand flex items-center justify-center font-bold">
-                  <Shield className="w-5 h-5" />
-                </span>
-                <div>
-                  <h2 className="text-base font-bold text-primary">
-                    {signatureAction === 'submit' ? 'Sign & Submit Course Portfolio' : 'Formal Department Endorsement & Seal'}
-                  </h2>
-                  <p className="text-xs text-tertiary">
-                    {signatureAction === 'submit' ? 'Instructor Digital Verification' : 'Department Head Accreditation Endorsement'}
-                  </p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowSignatureModal(false)}
-                className="p-1.5 text-quaternary hover:text-primary rounded-lg transition cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <div className="text-xs text-secondary mb-4 bg-background p-3 rounded-xl border border-subtle leading-relaxed">
-              {signatureAction === 'submit' ? (
-                <p>I certify that all assessment questions, OBE calculations, and grade tabulation sheets are complete, accurate, and reflect the actual student cohort. I confirm that representative student answer scripts are authentic student artifacts.</p>
-              ) : (
-                <p>I have reviewed this course file for academic quality, syllabus adherence, and OBE compliance. I formally endorse this portfolio for departmental records and accreditation archiving.</p>
-              )}
-            </div>
-
-            {/* Signature Creation Mode Tabs */}
-            <div className="mb-4">
-              <label className="block text-xs font-bold text-tertiary uppercase font-mono mb-2">Choose Signature Method:</label>
-              <div className="grid grid-cols-3 gap-2 bg-background p-1 rounded-xl border border-subtle">
-                <button
-                  type="button"
-                  onClick={() => setSignatureMode('draw')}
-                  className={`py-2 px-2.5 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer ${
-                    signatureMode === 'draw'
-                      ? 'bg-surface text-brand shadow-xs border border-subtle'
-                      : 'text-tertiary hover:text-primary'
-                  }`}
-                >
-                  <span>✍️</span>
-                  <span>Draw</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setSignatureMode('type')}
-                  className={`py-2 px-2.5 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer ${
-                    signatureMode === 'type'
-                      ? 'bg-surface text-brand shadow-xs border border-subtle'
-                      : 'text-tertiary hover:text-primary'
-                  }`}
-                >
-                  <span>🔤</span>
-                  <span>Type Name</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setSignatureMode('upload')}
-                  className={`py-2 px-2.5 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer ${
-                    signatureMode === 'upload'
-                      ? 'bg-surface text-brand shadow-xs border border-subtle'
-                      : 'text-tertiary hover:text-primary'
-                  }`}
-                >
-                  <span>📤</span>
-                  <span>Upload Scan</span>
-                </button>
-              </div>
-            </div>
-
-            {/* Mode 1: DRAW SIGNATURE */}
-            {signatureMode === 'draw' && (
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-semibold text-secondary">Draw your signature with mouse or touch:</span>
-                  <button 
-                    type="button"
-                    onClick={() => sigCanvasRef.current?.clear()} 
-                    className="text-xs font-bold text-brand hover:underline cursor-pointer"
-                  >
-                    Clear Canvas
-                  </button>
-                </div>
-                <div className="border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-xl overflow-hidden bg-white shadow-inner">
-                  <SignatureCanvas
-                    ref={sigCanvasRef}
-                    penColor="#0f172a"
-                    canvasProps={{ className: 'signature-canvas w-full h-36 cursor-crosshair', width: 500, height: 144 }}
-                  />
-                </div>
-                <p className="text-xs text-tertiary text-center font-mono">Draw within the box above using pen or finger</p>
-              </div>
-            )}
-
-            {/* Mode 2: TYPE STYLED SIGNATURE */}
-            {signatureMode === 'type' && (
-              <div className="space-y-3">
-                <div>
-                  <label className="block text-xs font-semibold text-secondary mb-1">Your Full Official Name:</label>
-                  <input
-                    type="text"
-                    value={typedSignatureName}
-                    onChange={(e) => setTypedSignatureName(e.target.value)}
-                    placeholder="e.g. Dr. Alice Smith"
-                    className="w-full bg-background border border-subtle rounded-xl py-2 px-3 text-xs text-primary font-semibold focus:outline-none focus:ring-2 focus:ring-brand/20"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-tertiary uppercase font-mono mb-1.5">Select Calligraphy Style:</label>
-                  <div className="grid grid-cols-2 gap-2">
-                    {[
-                      { name: 'Classic Cursive', sample: 'Great Vibes' },
-                      { name: 'Executive Script', sample: 'Dancing Script' },
-                      { name: 'Academic Signature', sample: 'Sacramento' },
-                      { name: 'Modern Handcrafted', sample: 'Caveat' }
-                    ].map((style, idx) => (
-                      <button
-                        key={idx}
-                        type="button"
-                        onClick={() => setTypedSignatureFont(idx)}
-                        className={`p-2.5 rounded-xl border text-left transition cursor-pointer ${
-                          typedSignatureFont === idx
-                            ? 'bg-brand/5 border-brand ring-1 ring-brand shadow-xs'
-                            : 'bg-background hover:bg-surface-hover border-subtle'
-                        }`}
-                      >
-                        <span className="text-xs font-bold text-quaternary block uppercase font-mono mb-1">{style.name}</span>
-                        <span 
-                          className="block text-slate-800 dark:text-slate-200 truncate py-1"
-                          style={{
-                            fontFamily: idx === 0 ? '"Great Vibes", cursive' :
-                                        idx === 1 ? '"Dancing Script", cursive' :
-                                        idx === 2 ? '"Sacramento", cursive' :
-                                        '"Caveat", cursive',
-                            fontSize: idx === 0 || idx === 2 ? '22px' : '18px'
-                          }}
-                        >
-                          {typedSignatureName || 'Signature'}
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Styled Signature Live Preview Card */}
-                <div className="p-4 bg-white rounded-xl border-2 border-slate-200 shadow-sm text-center">
-                  <span className="text-xs uppercase font-bold text-slate-400 font-mono block mb-1">Generated Digital Signature Preview</span>
-                  <div 
-                    className="text-slate-900 py-3 text-3xl select-none"
-                    style={{
-                      fontFamily: typedSignatureFont === 0 ? '"Great Vibes", cursive' :
-                                  typedSignatureFont === 1 ? '"Dancing Script", cursive' :
-                                  typedSignatureFont === 2 ? '"Sacramento", cursive' :
-                                  '"Caveat", cursive',
-                      fontSize: typedSignatureFont === 0 || typedSignatureFont === 2 ? '34px' : '28px'
-                    }}
-                  >
-                    {typedSignatureName || currentUser?.name || 'Your Signature'}
-                  </div>
-                  <div className="w-48 h-0.5 bg-slate-400 mx-auto rounded-full mt-1"></div>
-                </div>
-              </div>
-            )}
-
-            {/* Mode 3: UPLOAD SCANNED IMAGE */}
-            {signatureMode === 'upload' && (
-              <div className="space-y-3">
-                <span className="text-xs font-semibold text-secondary block">Upload scanned signature (PNG / JPG / WEBP):</span>
-                
-                {uploadedSignatureUrl ? (
-                  <div className="p-4 bg-white rounded-xl border-2 border-slate-200 text-center space-y-3 shadow-sm">
-                    <img 
-                      src={uploadedSignatureUrl} 
-                      alt="Uploaded Signature Preview" 
-                      className="max-h-28 mx-auto object-contain"
-                    />
-                    <div className="flex items-center justify-center gap-2">
-                      <label className="text-xs font-bold text-brand hover:underline cursor-pointer">
-                        <span>Change Image</span>
-                        <input
-                          type="file"
-                          accept="image/png,image/jpeg,image/jpg,image/webp"
-                          className="hidden"
-                          onChange={(e) => {
-                            const file = e.target.files?.[0];
-                            if (file) {
-                              const reader = new FileReader();
-                              reader.onload = () => setUploadedSignatureUrl(reader.result as string);
-                              reader.readAsDataURL(file);
-                            }
-                          }}
-                        />
-                      </label>
-                      <span className="text-slate-300">•</span>
-                      <button
-                        type="button"
-                        onClick={() => setUploadedSignatureUrl(null)}
-                        className="text-xs font-bold text-rose-500 hover:underline cursor-pointer"
-                      >
-                        Remove
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  <label className="border-2 border-dashed border-slate-300 dark:border-slate-700 hover:border-brand rounded-2xl p-8 flex flex-col items-center justify-center gap-2 bg-background hover:bg-surface-hover transition cursor-pointer">
-                    <UploadCloud className="w-8 h-8 text-brand" />
-                    <span className="text-xs font-bold text-primary">Click to select signature image</span>
-                    <span className="text-xs text-tertiary font-mono">Supports transparent PNG, JPG, or WEBP (Max 5MB)</span>
-                    <input
-                      type="file"
-                      accept="image/png,image/jpeg,image/jpg,image/webp"
-                      className="hidden"
-                      onChange={(e) => {
-                        const file = e.target.files?.[0];
-                        if (file) {
-                          if (file.size > 5 * 1024 * 1024) {
-                            showNotification('Image size exceeds 5MB limit', 'error');
-                            return;
-                          }
-                          const reader = new FileReader();
-                          reader.onload = () => setUploadedSignatureUrl(reader.result as string);
-                          reader.readAsDataURL(file);
-                        }
-                      }}
-                    />
-                  </label>
-                )}
-              </div>
-            )}
-
-            {/* Modal Actions */}
-            <div className="flex items-center justify-end gap-3 mt-6 pt-4 border-t border-subtle">
-              <button
-                type="button"
-                onClick={() => setShowSignatureModal(false)}
-                className="px-4 py-2 font-semibold text-secondary hover:text-primary bg-background rounded-xl border border-subtle transition text-xs cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={async () => {
-                  let sigBase64 = '';
-
-                  if (signatureMode === 'draw') {
-                    if (sigCanvasRef.current?.isEmpty()) {
-                      showNotification('Please draw your signature before confirming.', 'error');
-                      return;
-                    }
-                    sigBase64 = sigCanvasRef.current?.getTrimmedCanvas().toDataURL('image/png') || '';
-                  } else if (signatureMode === 'upload') {
-                    if (!uploadedSignatureUrl) {
-                      showNotification('Please upload a signature image file.', 'error');
-                      return;
-                    }
-                    sigBase64 = uploadedSignatureUrl;
-                  } else if (signatureMode === 'type') {
-                    const nameToSign = typedSignatureName.trim() || currentUser?.name || 'Faculty Signature';
-                    sigBase64 = generateTypedSignatureDataUrl(nameToSign, typedSignatureFont);
-                  }
-
-                  if (!sigBase64) {
-                    showNotification('Failed to generate signature. Please try again.', 'error');
-                    return;
-                  }
-                  
-                  const endpoint = signatureAction === 'submit' 
-                    ? `/api/offerings/${selectedOffering.id}/submit` 
-                    : `/api/offerings/${selectedOffering.id}/approve`;
-                  
-                  try {
-                    const res = await fetch(endpoint, {
-                      method: 'PUT',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ signatureUrl: sigBase64 })
-                    });
-                    
-                    if (res.ok) {
-                      showNotification(`Portfolio successfully ${signatureAction === 'submit' ? 'signed and submitted' : 'endorsed and approved'}!`, 'success');
-                      setShowSignatureModal(false);
-                      fetchAllData();
-                      const updated = await res.json();
-                      setSelectedOffering(updated.offering);
-                    } else {
-                      const data = await res.json();
-                      showNotification(data.error || `Failed to ${signatureAction} portfolio`, 'error');
-                    }
-                  } catch (e) {
-                    showNotification('Network error processing signature.', 'error');
-                  }
-                }}
-                className="px-5 py-2 font-bold text-white bg-brand hover:bg-brand-hover rounded-xl transition shadow-md flex items-center gap-2 text-xs cursor-pointer shadow-indigo-600/20"
-              >
-                <Check className="w-4 h-4" /> Confirm & {signatureAction === 'submit' ? 'Submit Portfolio' : 'Approve & Seal'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Floating Bottom Action Bar for Selective Export & Print */}
       {selectedDocIdsForBatch.size > 0 && selectedOffering && (

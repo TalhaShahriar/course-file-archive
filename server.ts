@@ -38,12 +38,15 @@ import {
   dbUpdateUserAvatar,
   dbDeleteUser,
   dbGetCourses,
+  dbGetCourseById,
   dbCreateCourse,
   dbGetOfferings,
+  dbGetOfferingById,
   dbCreateOffering,
   dbUpdateOfferingAuditor,
   dbUpdateOfferingStatus,
   dbGetDocuments,
+  dbGetDocumentById,
   dbCreateDocument,
   dbUpdateDocument, dbDeleteDocument,
   dbGetAuditLogs,
@@ -131,9 +134,47 @@ app.use(async (req: any, res: Response, next: NextFunction) => {
   }
 });
 
+// Cryptographic Session Token Signing & Verification
+const SESSION_SECRET = process.env.SESSION_SECRET || 'cfa-university-session-secret-2026';
+
+export function signSession(email: string): string {
+  const hmac = crypto.createHmac('sha256', SESSION_SECRET).update(email.toLowerCase().trim()).digest('hex');
+  return `${email.toLowerCase().trim()}:${hmac}`;
+}
+
+export function verifySession(token?: string): string | null {
+  if (!token || typeof token !== 'string') return null;
+  const lastColon = token.lastIndexOf(':');
+  if (lastColon === -1) return null;
+  const email = token.substring(0, lastColon).toLowerCase().trim();
+  const hmac = token.substring(lastColon + 1);
+  if (!email || !hmac) return null;
+  try {
+    const expected = crypto.createHmac('sha256', SESSION_SECRET).update(email).digest('hex');
+    const a = Buffer.from(hmac, 'hex');
+    const b = Buffer.from(expected, 'hex');
+    if (a.length === b.length && crypto.timingSafeEqual(a, b)) {
+      return email;
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+
 // Middlewares for authentication and authorization
 async function getSessionUser(req: any): Promise<User | null> {
-  const userEmail = req.cookies.session_user_email;
+  const token = req.cookies.session_user_token || req.cookies.session_user_email;
+  let userEmail = verifySession(token);
+  
+  // Backwards-compatibility fallback if raw email cookie was sent in dev
+  if (!userEmail && req.cookies.session_user_email) {
+    userEmail = verifySession(req.cookies.session_user_email);
+    if (!userEmail && process.env.NODE_ENV !== 'production' && req.cookies.session_user_email.includes('@')) {
+      userEmail = req.cookies.session_user_email.toLowerCase().trim();
+    }
+  }
+
   if (!userEmail) return null;
   return await dbGetUserByEmail(userEmail);
 }
@@ -165,17 +206,20 @@ app.post('/api/register', loginLimiter, async (req: Request, res: Response) => {
   }
 
   const emailLower = targetEmail;
-  const isDev = emailLower === 'talharupok2022@gmail.com' || emailLower.includes('admin');
+  const isDev = emailLower === 'talharupok2022@gmail.com';
   const isDeptHead = emailLower === 'maheen@ewubd.edu';
-  const isEWU = emailLower.endsWith('@ewubd.edu') || emailLower.endsWith('@university.edu');
 
+  // Public registrations always default to INSTRUCTOR with pending approval.
+  // Role promotions (to DEPT_HEAD, AUDITOR, or ADMIN) require explicit approval by an Administrator.
   let assignedRole: UserRole = UserRole.INSTRUCTOR;
+  let pendingApproval = true;
+
   if (isDev) {
     assignedRole = UserRole.ADMIN;
-  } else if (isDeptHead || role === UserRole.DEPT_HEAD) {
+    pendingApproval = false;
+  } else if (isDeptHead) {
     assignedRole = UserRole.DEPT_HEAD;
-  } else if (role === UserRole.AUDITOR) {
-    assignedRole = UserRole.AUDITOR;
+    pendingApproval = false;
   }
 
   const newUser: User = {
@@ -184,20 +228,23 @@ app.post('/api/register', loginLimiter, async (req: Request, res: Response) => {
     email: targetEmail,
     role: assignedRole,
     department: department?.trim() || 'Department of Computer Science & Engineering',
-    pendingApproval: !(isDev || isDeptHead || isEWU),
+    pendingApproval,
     passwordHash: hashPassword(password),
   };
 
   await dbCreateUser(newUser);
 
-  // Set session cookie
-  res.cookie('session_user_email', newUser.email, {
+  // Set cryptographically signed session cookies
+  const signedToken = signSession(newUser.email);
+  const cookieOptions = {
     maxAge: 24 * 60 * 60 * 1000,
     httpOnly: true,
     path: '/',
-    sameSite: 'none',
+    sameSite: 'none' as const,
     secure: true,
-  });
+  };
+  res.cookie('session_user_token', signedToken, cookieOptions);
+  res.cookie('session_user_email', signedToken, cookieOptions);
 
   await dbCreateAuditLog({
     id: `log_${Date.now()}`,
@@ -251,7 +298,7 @@ app.post('/api/login', loginLimiter, async (req: Request, res: Response) => {
   // If logging in with Google OAuth and user does not exist in DB, automatically register them!
   if (googleToken && !user) {
     const emailLower = targetEmail;
-    const isDev = emailLower === 'talharupok2022@gmail.com' || emailLower.includes('admin');
+    const isDev = emailLower === 'talharupok2022@gmail.com';
     const isDeptHead = emailLower === 'maheen@ewubd.edu';
     const isEWU = emailLower.endsWith('@ewubd.edu') || emailLower.endsWith('@university.edu');
     
@@ -277,23 +324,31 @@ app.post('/api/login', loginLimiter, async (req: Request, res: Response) => {
       return res.status(404).json({ error: 'No account found with this email. Please register to create an account.' });
     }
 
-    if (password) {
-      const isMatch = verifyPassword(password, user.passwordHash || DEFAULT_SEED_PASSWORD_HASH);
-      if (!isMatch) {
-        return res.status(401).json({ error: 'Incorrect password. Please verify and try again.' });
-      }
+    if (!password) {
+      return res.status(400).json({ error: 'Password is required to sign in.' });
     }
-    // If no password provided (e.g. 1-click demo select), user is allowed
+
+    const isMatch = verifyPassword(password, user.passwordHash || DEFAULT_SEED_PASSWORD_HASH);
+    if (!isMatch) {
+      return res.status(401).json({ error: 'Incorrect password. Please verify and try again.' });
+    }
   }
 
-  // Set standard httpOnly cookie for 24 hours
-  res.cookie('session_user_email', user.email, {
+  if (!user) {
+    return res.status(404).json({ error: 'User account could not be found or initialized.' });
+  }
+
+  // Set cryptographically signed session cookies for 24 hours
+  const signedToken = signSession(user.email);
+  const cookieOptions = {
     maxAge: 24 * 60 * 60 * 1000,
     httpOnly: true,
     path: '/',
-    sameSite: 'none',
+    sameSite: 'none' as const,
     secure: true,
-  });
+  };
+  res.cookie('session_user_token', signedToken, cookieOptions);
+  res.cookie('session_user_email', signedToken, cookieOptions);
 
   // Log the login action
   const timestamp = new Date().toISOString();
@@ -309,7 +364,7 @@ app.post('/api/login', loginLimiter, async (req: Request, res: Response) => {
     details,
   });
 
-  const { passwordHash, ...userClean } = user;
+  const { passwordHash, ...userClean } = user as any;
   res.json({ user: userClean });
 });
 
@@ -318,8 +373,6 @@ app.post('/api/logout', async (req: Request, res: Response) => {
   
   if (user) {
     const timestamp = new Date().toISOString();
-    const details = `User ${user.name} logged out.`;
-
     await dbCreateAuditLog({
       id: `log_${Date.now()}`,
       action: 'USER_LOGOUT',
@@ -327,12 +380,13 @@ app.post('/api/logout', async (req: Request, res: Response) => {
       actorName: user.name,
       actorEmail: user.email,
       timestamp,
-      details,
+      details: `User ${user.name} (${user.email}) logged out successfully.`,
     });
   }
 
-  res.clearCookie('session_user_email');
-  res.json({ success: true });
+  res.clearCookie('session_user_token', { path: '/' });
+  res.clearCookie('session_user_email', { path: '/' });
+  res.json({ message: 'Logged out successfully' });
 });
 
 // Users Catalog
@@ -1464,6 +1518,7 @@ app.post('/api/documents/upload', upload.single('file'), async (req: Request, re
   const storagePath = await uploadFile(storagePathKey, fileBuffer, fileMimeType);
 
   const docUniqueId = `doc_${Date.now()}_${crypto.randomUUID().substring(0, 8)}`;
+  const computedFileHash = crypto.createHash('sha256').update(fileBuffer).digest('hex');
   const newDoc: Document = {
     id: docUniqueId,
     offeringId,
@@ -1471,7 +1526,7 @@ app.post('/api/documents/upload', upload.single('file'), async (req: Request, re
     version,
     isCurrent: true,
     fileName,
-    fileHash: '',
+    fileHash: computedFileHash,
     uploadedBy: currentUser.email,
     uploadedAt: new Date().toISOString(),
     storagePath,
@@ -1601,6 +1656,7 @@ app.post('/api/documents/bulk-upload', upload.array('files'), async (req: Reques
     const storagePath = await uploadFile(storagePathKey, fileBuffer, fileMimeType);
 
     const docUniqueId = `doc_${Date.now()}_${crypto.randomUUID().substring(0, 8)}`;
+    const computedFileHash = crypto.createHash('sha256').update(fileBuffer).digest('hex');
     const newDoc: Document = {
       id: docUniqueId,
       offeringId,
@@ -1608,7 +1664,7 @@ app.post('/api/documents/bulk-upload', upload.array('files'), async (req: Reques
       version,
       isCurrent: true,
       fileName,
-      fileHash: '',
+      fileHash: computedFileHash,
       uploadedBy: currentUser.email,
       uploadedAt: new Date().toISOString(),
       storagePath,
@@ -1857,6 +1913,16 @@ app.post('/api/documents/confirm-upload', async (req: Request, res: Response) =>
   const storagePath = isR2Configured ? `r2://${key}` : `local://${key}`;
 
   try {
+    let computedFileHash = req.body.fileHash || '';
+    if (!computedFileHash) {
+      try {
+        const fileObj = await getFile(storagePath);
+        computedFileHash = crypto.createHash('sha256').update(fileObj.buffer).digest('hex');
+      } catch (err) {
+        console.warn('[Confirm Upload] Could not calculate file hash from storage object:', err);
+      }
+    }
+
     const docUniqueId = `doc_${Date.now()}_${crypto.randomUUID().substring(0, 8)}`;
     const newDoc: Document = {
       id: docUniqueId,
@@ -1865,7 +1931,7 @@ app.post('/api/documents/confirm-upload', async (req: Request, res: Response) =>
       version: Number(version),
       isCurrent: true,
       fileName,
-      fileHash: '',
+      fileHash: computedFileHash,
       uploadedBy: currentUser.email,
       uploadedAt: new Date().toISOString(),
       storagePath,
@@ -1978,22 +2044,19 @@ app.get('/api/documents/:id/download', async (req: Request, res: Response) => {
   }
 
   const { id } = req.params;
-  const allDocs = await dbGetDocuments();
-  const doc = allDocs.find(d => d.id === id);
+  const doc = await dbGetDocumentById(id);
 
   if (!doc) {
     return res.status(404).json({ error: 'Document metadata not found' });
   }
 
-  // Get offering and course
-  const offerings = await dbGetOfferings();
-  const offering = offerings.find(o => o.id === doc.offeringId);
+  // Get offering and course via indexed queries
+  const offering = await dbGetOfferingById(doc.offeringId);
   if (!offering) {
     return res.status(404).json({ error: 'Associated Course Offering not found' });
   }
 
-  const courses = await dbGetCourses();
-  const course = courses.find(c => c.id === offering.courseId);
+  const course = await dbGetCourseById(offering.courseId);
   if (!course) {
     return res.status(404).json({ error: 'Associated Course relation not found' });
   }
@@ -2355,10 +2418,66 @@ app.get('/api/audit-log', async (req: Request, res: Response) => {
     return res.status(403).json({ error: 'Unauthorized: System Administrators only' });
   }
 
-  const auditLogs = await dbGetAuditLogs();
-  // Sort reverse chronological
-  const sortedLogs = [...auditLogs].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-  res.json({ auditLogs: sortedLogs });
+  const page = req.query.page ? parseInt(req.query.page as string, 10) : 1;
+  const limit = req.query.limit !== undefined 
+    ? (req.query.limit === 'all' ? 0 : parseInt(req.query.limit as string, 10))
+    : 25;
+  const search = typeof req.query.search === 'string' ? req.query.search : undefined;
+  const action = typeof req.query.action === 'string' ? req.query.action : undefined;
+  const actorEmail = typeof req.query.actorEmail === 'string' ? req.query.actorEmail : undefined;
+  const startDate = typeof req.query.startDate === 'string' ? req.query.startDate : undefined;
+  const endDate = typeof req.query.endDate === 'string' ? req.query.endDate : undefined;
+
+  const result = await dbGetAuditLogs({
+    page,
+    limit,
+    search,
+    action,
+    actorEmail,
+    startDate,
+    endDate,
+  });
+
+  res.json(result);
+});
+
+// Export Audit Log to CSV (Admin Only)
+app.get('/api/audit-log/export', exportLimiter, async (req: Request, res: Response) => {
+  const currentUser = await getSessionUser(req);
+  if (!currentUser || currentUser.role !== UserRole.ADMIN) {
+    return res.status(403).json({ error: 'Unauthorized: System Administrators only' });
+  }
+
+  const search = typeof req.query.search === 'string' ? req.query.search : undefined;
+  const action = typeof req.query.action === 'string' ? req.query.action : undefined;
+  const actorEmail = typeof req.query.actorEmail === 'string' ? req.query.actorEmail : undefined;
+  const startDate = typeof req.query.startDate === 'string' ? req.query.startDate : undefined;
+  const endDate = typeof req.query.endDate === 'string' ? req.query.endDate : undefined;
+
+  const result = await dbGetAuditLogs({
+    limit: 0, // unlimited
+    search,
+    action,
+    actorEmail,
+    startDate,
+    endDate,
+  });
+
+  const headers = ['Timestamp', 'Action', 'Actor Name', 'Actor Email', 'Target Document', 'Details', 'Entry Hash'];
+  const rows = result.auditLogs.map(l => [
+    `"${(l.timestamp || '').replace(/"/g, '""')}"`,
+    `"${(l.action || '').replace(/"/g, '""')}"`,
+    `"${(l.actorName || '').replace(/"/g, '""')}"`,
+    `"${(l.actorEmail || '').replace(/"/g, '""')}"`,
+    `"${(l.targetDocumentName || '').replace(/"/g, '""')}"`,
+    `"${(l.details || '').replace(/"/g, '""')}"`,
+    `"${(l.entryHash || '').replace(/"/g, '""')}"`,
+  ]);
+
+  const csvContent = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+  res.setHeader('Content-Type', 'text/csv');
+  res.setHeader('Content-Disposition', `attachment; filename="audit_log_${new Date().toISOString().split('T')[0]}.csv"`);
+  res.send(csvContent);
 });
 
 // Mount Vite middleware for dev / serve static assets in production

@@ -113,12 +113,12 @@ export async function uploadFile(
 ): Promise<string> {
   if (isR2Configured && s3Client) {
     try {
-      const bucketName = process.env.R2_BUCKET!;
+      const activeBucket = bucketName!;
       const cleanKey = key.startsWith('/') ? key.substring(1) : key;
       
       await s3Client.send(
         new PutObjectCommand({
-          Bucket: bucketName,
+          Bucket: activeBucket,
           Key: cleanKey,
           Body: buffer,
           ContentType: contentType,
@@ -158,12 +158,11 @@ export async function uploadFile(
 export async function getFile(storagePath: string): Promise<{ buffer: Buffer; contentType: string }> {
   if (storagePath.startsWith('r2://') && isR2Configured && s3Client) {
     try {
-      const bucketName = process.env.R2_BUCKET!;
       const key = storagePath.replace('r2://', '');
       
       const response = await s3Client.send(
         new GetObjectCommand({
-          Bucket: bucketName,
+          Bucket: bucketName!,
           Key: key,
         })
       );
@@ -208,12 +207,11 @@ export async function getFile(storagePath: string): Promise<{ buffer: Buffer; co
 export async function deleteFile(storagePath: string): Promise<boolean> {
   if (storagePath.startsWith('r2://') && isR2Configured && s3Client) {
     try {
-      const bucketName = process.env.R2_BUCKET!;
       const key = storagePath.replace('r2://', '');
       
       await s3Client.send(
         new DeleteObjectCommand({
-          Bucket: bucketName,
+          Bucket: bucketName!,
           Key: key,
         })
       );
